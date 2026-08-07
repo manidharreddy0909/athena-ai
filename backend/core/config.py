@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     LLM_API_KEY: str = "lm-studio"
     LLM_MODEL: str = "gemma-4"
 
+    # Breath AI Layer (Pro features)
+    BREATH_AI_BASE_URL: str = ""
+    BREATH_AI_API_KEY: str = ""
+
     # Embeddings
     EMBEDDING_BASE_URL: str = "http://localhost:1234/v1"
     EMBEDDING_API_KEY: str = "lm-studio"

@@ -125,7 +125,7 @@ Generate a comprehensive assessment as JSON:
     ]
 
     try:
-        result_str = await chat_completion(messages, temperature=0.2, max_tokens=1024, json_mode=True)
+        result_str = await chat_completion(messages, temperature=0.2, max_tokens=1024, json_mode=True, use_breath_layer=True)
         assessment = json.loads(result_str)
     except Exception as e:
         logger.error(f"Report generation LLM failed: {e}")

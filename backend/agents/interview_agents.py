@@ -123,7 +123,7 @@ Evaluate and return JSON with this exact structure:
     ]
 
     try:
-        result_str = await chat_completion(messages, temperature=0.3, max_tokens=512, json_mode=True)
+        result_str = await chat_completion(messages, temperature=0.3, max_tokens=512, json_mode=True, use_breath_layer=True)
         result = json.loads(result_str)
         return result
     except Exception as e:
@@ -201,7 +201,7 @@ Return JSON:
     ]
 
     try:
-        result_str = await chat_completion(messages, temperature=0.4, max_tokens=512, json_mode=True)
+        result_str = await chat_completion(messages, temperature=0.4, max_tokens=512, json_mode=True, use_breath_layer=True)
         result = json.loads(result_str)
         return result
     except Exception as e:
