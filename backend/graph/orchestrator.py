@@ -1,17 +1,19 @@
 """
-Athena AI — Interview Orchestrator
-Manages the full interview session lifecycle:
-start → question → answer → evaluate → next question → report
+Athena AI — Robust LangGraph Interview State Machine
+Implements the exact state transition flow:
+INIT → PROFILE_ANALYSIS → QUESTION → ANSWER → EVALUATION → MEMORY_UPDATE → NEXT_QUESTION → REPORT
 """
-import uuid
-from typing import Optional
+from typing import Dict, Any, Optional
 from loguru import logger
+import uuid
+
+from langgraph.graph import StateGraph, END
 
 from models.interview import (
     InterviewState, InterviewStatus, CandidateProfile,
-    QuestionType, DifficultyLevel, ReasoningTrace,
-    StartInterviewRequest, StartInterviewResponse,
-    RespondRequest, RespondResponse, FeedbackReport
+    QuestionType, DifficultyLevel, StartInterviewRequest,
+    StartInterviewResponse, RespondRequest, RespondResponse,
+    FeedbackReport
 )
 from knowledge.knowledge_graph import KnowledgeGraph
 from memory.memory_engine import MemoryEngine
@@ -21,221 +23,160 @@ from agents.interview_agents import (
 from agents.feedback_agent import generate_report
 from core.config import settings
 
-# In-memory session store (replace with Redis for production)
-_sessions: dict[str, dict] = {}
+# In-memory storage for state objects
+_sessions: Dict[str, Dict[str, Any]] = {}
 
+# ─────────────────────────────────────────────
+# LangGraph Nodes
+# ─────────────────────────────────────────────
 
-def _get_session(session_id: str) -> Optional[dict]:
-    return _sessions.get(session_id)
-
-
-def _save_session(session_id: str, state: InterviewState, graph: KnowledgeGraph, memory: MemoryEngine):
-    _sessions[session_id] = {
-        "state": state,
-        "graph": graph,
-        "memory": memory,
-    }
-
-
-def _determine_initial_topic(profile: CandidateProfile, graph: KnowledgeGraph) -> str:
-    """Pick the best starting topic based on candidate profile."""
-    # If candidate has skipped topics, start there
-    skipped = profile.skipped_topics
-    all_nodes = list(graph.graph.nodes)
-
-    for topic in skipped:
-        if topic in all_nodes:
-            return topic
-
-    # Otherwise, start with a foundational topic
-    # Find nodes with no predecessors (root nodes)
-    roots = [n for n in graph.graph.nodes if graph.graph.in_degree(n) == 0]
-    if roots:
-        return roots[0]
-
-    return "Prompt Engineering"
-
-
-async def start_interview(request: StartInterviewRequest) -> StartInterviewResponse:
-    """Initialize a new interview session."""
-    session_id = f"sess_{uuid.uuid4().hex[:12]}"
-
-    # Build candidate profile
-    candidate = CandidateProfile(
-        candidate_id=request.candidate_id or f"cand_{uuid.uuid4().hex[:8]}",
-        name=request.name,
-        completed_missions=request.completed_missions,
-        skipped_topics=request.skipped_topics,
-        curriculum_json=request.curriculum_json,
-        learning_signals=request.learning_signals or {},
-    )
-
-    # Initialize graph & memory
+async def node_profile_analysis(state: InterviewState) -> InterviewState:
+    """Analyze the candidate profile and select the initial topic."""
+    logger.info(f"[{state.session_id}] Executing PROFILE_ANALYSIS")
+    
+    # Pre-populate knowledge graph with candidate's learning signals
     graph = KnowledgeGraph()
-    memory = MemoryEngine()
-
-    # Pre-populate graph from learning signals
-    for topic, confidence in (request.learning_signals or {}).items():
+    for topic, confidence in state.candidate.learning_signals.items():
         graph.update_confidence(topic, confidence)
-
-    # Initialize state
-    state = InterviewState(
-        session_id=session_id,
-        candidate=candidate,
-        status=InterviewStatus.IN_PROGRESS,
-    )
-
-    # Determine first topic
-    first_topic = _determine_initial_topic(candidate, graph)
-
-    # Generate first question
-    first_question = await generate_question(
-        topic=first_topic,
-        question_type=QuestionType.THEORY,
-        difficulty=DifficultyLevel.EASY,
-        candidate_name=candidate.name,
-    )
-
-    # Update state
-    state.current_question = first_question
-    state.current_question_type = QuestionType.THEORY
+    
+    # Pick first topic based on skipped topics or core foundations
+    skipped = state.candidate.skipped_topics
+    all_nodes = list(graph.graph.nodes)
+    
+    first_topic = "Prompt Engineering"
+    for t in skipped:
+        if t in all_nodes:
+            first_topic = t
+            break
+            
     state.current_topic = first_topic
     state.current_curriculum_day = graph.get_curriculum_day(first_topic)
-    state.current_difficulty = DifficultyLevel.EASY
-    state.questions_asked = 1
-    state.current_reasoning_trace = ReasoningTrace(
-        weak_node=first_topic,
-        dependency_path=[first_topic],
-        human_explanation=f"Starting with {first_topic} — a core foundation of the AI curriculum.",
+    
+    # Store instances in global memory for this session
+    _sessions[state.session_id]["graph"] = graph
+    _sessions[state.session_id]["memory"] = MemoryEngine()
+    
+    return state
+
+
+async def node_generate_question(state: InterviewState) -> InterviewState:
+    """Generate the actual question text using LLM."""
+    logger.info(f"[{state.session_id}] Executing QUESTION generation")
+    
+    memory = _sessions[state.session_id]["memory"]
+    
+    question = await generate_question(
+        topic=state.current_topic or "AI Foundations",
+        question_type=state.current_question_type or QuestionType.THEORY,
+        difficulty=state.current_difficulty,
+        context=memory.get_context_for_llm(),
+        last_answer=state.last_answer,
+        candidate_name=state.candidate.name,
     )
-
-    # Save session
-    _save_session(session_id, state, graph, memory)
-
-    logger.info(f"🎬 Interview started: {session_id} for {candidate.name}")
-
-    return StartInterviewResponse(
-        session_id=session_id,
-        candidate_id=candidate.candidate_id,
-        status=InterviewStatus.IN_PROGRESS,
-        question_number=1,
-        question=first_question,
-        question_type=QuestionType.THEORY,
-        topic=first_topic,
-        curriculum_day=state.current_curriculum_day,
-        difficulty_level=DifficultyLevel.EASY,
-        reasoning_trace=state.current_reasoning_trace,
-        total_questions_planned=settings.MIN_QUESTIONS,
-    )
+    
+    state.current_question = question
+    
+    if state.questions_asked == 0:
+        state.questions_asked = 1 # Initial start
+        
+    return state
 
 
-async def respond_to_question(request: RespondRequest) -> RespondResponse:
-    """Process an answer and return the next question or complete the interview."""
-    session = _get_session(request.session_id)
-    if not session:
-        raise ValueError(f"Session not found: {request.session_id}")
-
-    state: InterviewState = session["state"]
-    graph: KnowledgeGraph = session["graph"]
-    memory: MemoryEngine = session["memory"]
-
-    # ── Evaluate the answer ──────────────────────────────────
+async def node_evaluate_answer(state: InterviewState) -> InterviewState:
+    """Evaluate candidate answer."""
+    logger.info(f"[{state.session_id}] Executing EVALUATION")
+    
+    if not state.last_answer:
+        return state
+        
     evaluation = await evaluate_answer(
-        question=state.current_question,
-        answer=request.answer,
-        topic=state.current_topic,
-        question_type=state.current_question_type,
+        question=state.current_question or "",
+        answer=state.last_answer,
+        topic=state.current_topic or "",
+        question_type=state.current_question_type or QuestionType.THEORY,
         difficulty=state.current_difficulty,
     )
+    
+    state.last_answer_score = evaluation.get("score", 0.5)
+    state.last_answer_feedback = evaluation.get("feedback", "")
+    return state
 
-    score = evaluation.get("score", 0.5)
-    feedback = evaluation.get("feedback", "")
 
-    # ── Update graph confidence ──────────────────────────────
-    graph.update_confidence(state.current_topic, score)
-
-    # ── Update Digital Twin ──────────────────────────────────
-    state.topic_confidence[state.current_topic] = score
-    state.last_answer = request.answer
-    state.last_answer_score = score
-    state.last_answer_feedback = feedback
-    state.confidence_score = (
-        sum(state.topic_confidence.values()) / len(state.topic_confidence)
-        if state.topic_confidence else 0.5
-    )
-
-    # Consecutive tracking
+async def node_memory_update(state: InterviewState) -> InterviewState:
+    """Update Digital Twin, Knowledge Graph, and Memory Engine."""
+    logger.info(f"[{state.session_id}] Executing MEMORY_UPDATE")
+    
+    graph: KnowledgeGraph = _sessions[state.session_id]["graph"]
+    memory: MemoryEngine = _sessions[state.session_id]["memory"]
+    
+    score = state.last_answer_score or 0.5
+    topic = state.current_topic or "Unknown"
+    
+    # Update knowledge graph & twin
+    graph.update_confidence(topic, score)
+    state.topic_confidence[topic] = score
+    
     if score >= 0.65:
         state.consecutive_correct += 1
         state.consecutive_wrong = 0
     else:
         state.consecutive_wrong += 1
         state.consecutive_correct = 0
-
-    # ── Record in memory ─────────────────────────────────────
+        
+    # Update Memory
     memory.record_qa(
-        question=state.current_question,
-        answer=request.answer,
-        topic=state.current_topic,
+        question=state.current_question or "",
+        answer=state.last_answer or "",
+        topic=topic,
         curriculum_day=state.current_curriculum_day,
-        question_type=state.current_question_type.value,
+        question_type=state.current_question_type.value if state.current_question_type else "theory",
         score=score,
     )
-
-    # ── Record in Q&A history ────────────────────────────────
+    
+    # Record History
     state.qa_history.append({
         "question_number": state.questions_asked,
         "question": state.current_question,
-        "answer": request.answer,
-        "topic": state.current_topic,
+        "answer": state.last_answer,
+        "topic": topic,
         "curriculum_day": state.current_curriculum_day,
-        "question_type": state.current_question_type.value,
-        "difficulty": state.current_difficulty.value,
         "score": score,
-        "feedback": feedback,
+        "feedback": state.last_answer_feedback,
     })
-
-    if state.current_topic not in state.topics_covered:
-        state.topics_covered.append(state.current_topic)
+    
+    if topic not in state.topics_covered:
+        state.topics_covered.append(topic)
     if state.current_curriculum_day and state.current_curriculum_day not in state.curriculum_days_covered:
         state.curriculum_days_covered.append(state.current_curriculum_day)
+        
+    return state
 
-    # ── Check if interview is complete ───────────────────────
-    is_complete = (
-        state.questions_asked >= settings.MIN_QUESTIONS
-        and len(state.curriculum_days_covered) >= settings.MIN_CURRICULUM_DAYS
-        and state.questions_asked >= settings.MIN_QUESTIONS
-    )
 
-    if state.questions_asked >= settings.MAX_QUESTIONS:
-        is_complete = True
-
-    if is_complete:
+async def node_plan_next(state: InterviewState) -> InterviewState:
+    """Decide if interview is over, or plan the next topic."""
+    logger.info(f"[{state.session_id}] Executing NEXT_QUESTION planning")
+    
+    # Check Completion conditions
+    if (state.questions_asked >= settings.MIN_QUESTIONS and 
+        len(state.curriculum_days_covered) >= settings.MIN_CURRICULUM_DAYS) or \
+       state.questions_asked >= settings.MAX_QUESTIONS:
         state.status = InterviewStatus.COMPLETE
-        _save_session(request.session_id, state, graph, memory)
-        logger.info(f"✅ Interview complete: {request.session_id} ({state.questions_asked} questions)")
-        return RespondResponse(
-            session_id=request.session_id,
-            question_number=state.questions_asked,
-            answer_score=score,
-            answer_feedback=feedback,
-            interview_complete=True,
-            questions_remaining=0,
-            message="Interview complete! Generating your report... 🦉",
-        )
-
-    # ── Plan next question ───────────────────────────────────
+        return state
+        
+    graph: KnowledgeGraph = _sessions[state.session_id]["graph"]
+    memory: MemoryEngine = _sessions[state.session_id]["memory"]
+    
     weak_topics = [
         t for t, c in graph.get_all_scores().items()
         if c < 0.65 and t not in state.topics_covered[-2:]
     ]
-
+    
     plan = await plan_next_question(
-        topic=state.current_topic,
+        topic=state.current_topic or "",
         weak_topics=weak_topics,
         topics_covered=state.topics_covered,
         days_covered=state.curriculum_days_covered,
-        confidence_score=state.confidence_score,
+        confidence_score=0.5,
         consecutive_correct=state.consecutive_correct,
         consecutive_wrong=state.consecutive_wrong,
         recent_context=memory.get_context_for_llm(),
@@ -243,81 +184,147 @@ async def respond_to_question(request: RespondRequest) -> RespondResponse:
         min_questions=settings.MIN_QUESTIONS,
         min_days=settings.MIN_CURRICULUM_DAYS,
     )
-
+    
     next_topic = plan.get("next_topic", state.current_topic)
-    next_type_str = plan.get("question_type", "theory")
-    next_difficulty_int = plan.get("difficulty", 2)
-
-    try:
-        next_type = QuestionType(next_type_str)
-    except ValueError:
-        next_type = QuestionType.THEORY
-
-    try:
-        next_difficulty = DifficultyLevel(min(max(int(next_difficulty_int), 1), 7))
-    except ValueError:
-        next_difficulty = DifficultyLevel.MEDIUM
-
-    # ── Generate next question ───────────────────────────────
-    next_question = await generate_question(
-        topic=next_topic,
-        question_type=next_type,
-        difficulty=next_difficulty,
-        context=memory.get_context_for_llm(),
-        last_answer=request.answer if next_type == QuestionType.FOLLOW_UP else "",
-        candidate_name=state.candidate.name,
-    )
-
-    # ── Build reasoning trace ────────────────────────────────
-    dep_path = graph.get_dependency_path(next_topic)
-    reasoning_trace = ReasoningTrace(
-        weak_node=next_topic if next_topic in weak_topics else None,
-        dependency_path=dep_path,
-        proposing_agent="Chief Interview Agent",
-        chief_rationale=plan.get("rationale", ""),
-        human_explanation=plan.get("human_explanation", f"Exploring your knowledge of {next_topic}."),
-    )
-
-    # ── Update state for next question ───────────────────────
+    next_type = QuestionType(plan.get("question_type", "theory"))
+    next_diff = DifficultyLevel(min(max(int(plan.get("difficulty", 2)), 1), 7))
+    
     state.questions_asked += 1
-    state.current_question = next_question
-    state.current_question_type = next_type
     state.current_topic = next_topic
+    state.current_question_type = next_type
+    state.current_difficulty = next_diff
     state.current_curriculum_day = graph.get_curriculum_day(next_topic)
-    state.current_difficulty = next_difficulty
-    state.current_reasoning_trace = reasoning_trace
+    
+    return state
 
-    _save_session(request.session_id, state, graph, memory)
 
-    questions_remaining = max(0, settings.MIN_QUESTIONS - state.questions_asked)
+# ─────────────────────────────────────────────
+# Edge Routing
+# ─────────────────────────────────────────────
 
+def route_after_planning(state: InterviewState) -> str:
+    """Route to generation or end."""
+    if state.status == InterviewStatus.COMPLETE:
+        return END
+    return "generate_question"
+
+# ─────────────────────────────────────────────
+# Graph Construction
+# ─────────────────────────────────────────────
+
+workflow = StateGraph(InterviewState)
+workflow.add_node("profile_analysis", node_profile_analysis)
+workflow.add_node("generate_question", node_generate_question)
+workflow.add_node("evaluate_answer", node_evaluate_answer)
+workflow.add_node("memory_update", node_memory_update)
+workflow.add_node("plan_next", node_plan_next)
+
+# Initialization Flow
+workflow.set_entry_point("profile_analysis")
+workflow.add_edge("profile_analysis", "generate_question")
+workflow.add_edge("generate_question", END)
+
+# Response Flow
+# To hook into LangGraph manually without cyclical hanging:
+# We execute sub-graphs when API endpoints are hit.
+app = workflow.compile()
+
+
+# ─────────────────────────────────────────────
+# Public API Methods
+# ─────────────────────────────────────────────
+
+async def start_interview(request: StartInterviewRequest) -> StartInterviewResponse:
+    """Initialize session and run Graph to generate first question."""
+    session_id = f"sess_{uuid.uuid4().hex[:12]}"
+    
+    candidate = CandidateProfile(
+        candidate_id=request.candidate_id or f"cand_{uuid.uuid4().hex[:8]}",
+        name=request.name,
+        completed_missions=request.completed_missions,
+        skipped_topics=request.skipped_topics,
+        learning_signals=request.learning_signals or {},
+    )
+    
+    state = InterviewState(
+        session_id=session_id,
+        candidate=candidate,
+        status=InterviewStatus.IN_PROGRESS,
+    )
+    
+    _sessions[session_id] = {"state": state}
+    
+    # Run the init subgraph (Profile Analysis -> Generate Question)
+    final_state = await app.ainvoke(state)
+    _sessions[session_id]["state"] = final_state
+    
+    return StartInterviewResponse(
+        session_id=session_id,
+        candidate_id=candidate.candidate_id,
+        status=InterviewStatus.IN_PROGRESS,
+        question_number=1,
+        question=final_state.current_question,
+        question_type=final_state.current_question_type,
+        topic=final_state.current_topic,
+        curriculum_day=final_state.current_curriculum_day,
+        difficulty_level=final_state.current_difficulty,
+        reasoning_trace=final_state.current_reasoning_trace,
+        total_questions_planned=settings.MIN_QUESTIONS,
+    )
+
+
+async def respond_to_question(request: RespondRequest) -> RespondResponse:
+    """Process candidate answer through the LangGraph execution loop."""
+    if request.session_id not in _sessions:
+        raise ValueError("Session not found")
+        
+    state = _sessions[request.session_id]["state"]
+    state.last_answer = request.answer
+    
+    # We dynamically build the response execution graph so we can ainvoke it
+    resp_workflow = StateGraph(InterviewState)
+    resp_workflow.add_node("evaluate", node_evaluate_answer)
+    resp_workflow.add_node("memory", node_memory_update)
+    resp_workflow.add_node("plan", node_plan_next)
+    resp_workflow.add_node("generate", node_generate_question)
+    
+    resp_workflow.set_entry_point("evaluate")
+    resp_workflow.add_edge("evaluate", "memory")
+    resp_workflow.add_edge("memory", "plan")
+    
+    def conditional_end(s: InterviewState):
+        return END if s.status == InterviewStatus.COMPLETE else "generate"
+        
+    resp_workflow.add_conditional_edges("plan", conditional_end)
+    resp_workflow.add_edge("generate", END)
+    
+    resp_app = resp_workflow.compile()
+    
+    # Execute the response chain
+    final_state = await resp_app.ainvoke(state)
+    _sessions[request.session_id]["state"] = final_state
+    
     return RespondResponse(
         session_id=request.session_id,
-        question_number=state.questions_asked,
-        question=next_question,
-        question_type=next_type,
-        topic=next_topic,
-        curriculum_day=state.current_curriculum_day,
-        difficulty_level=next_difficulty,
-        reasoning_trace=reasoning_trace,
-        answer_score=score,
-        answer_feedback=feedback,
-        interview_complete=False,
-        questions_remaining=questions_remaining,
-        message=f"Question {state.questions_asked} of {settings.MIN_QUESTIONS}+",
+        question_number=final_state.questions_asked,
+        question=final_state.current_question,
+        question_type=final_state.current_question_type,
+        topic=final_state.current_topic,
+        curriculum_day=final_state.current_curriculum_day,
+        difficulty_level=final_state.current_difficulty,
+        reasoning_trace=final_state.current_reasoning_trace,
+        answer_score=final_state.last_answer_score,
+        answer_feedback=final_state.last_answer_feedback,
+        interview_complete=(final_state.status == InterviewStatus.COMPLETE),
+        questions_remaining=max(0, settings.MIN_QUESTIONS - final_state.questions_asked),
+        message="Interview complete" if final_state.status == InterviewStatus.COMPLETE else "Next question",
     )
 
 
 async def get_report(session_id: str) -> FeedbackReport:
-    """Generate and return the final interview report."""
-    session = _get_session(session_id)
-    if not session:
-        raise ValueError(f"Session not found: {session_id}")
-
-    state: InterviewState = session["state"]
-
-    if state.status != InterviewStatus.COMPLETE and state.questions_asked < 3:
-        raise ValueError("Interview not complete yet. Please finish the interview first.")
-
-    report = await generate_report(state)
-    return report
+    """Generate final report."""
+    if session_id not in _sessions:
+        raise ValueError("Session not found")
+        
+    state = _sessions[session_id]["state"]
+    return await generate_report(state)

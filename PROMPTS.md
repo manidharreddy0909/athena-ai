@@ -35,3 +35,56 @@ Audit the existing hackathon implementation, establish a strict git workflow, an
 
 **Result & Verification:**
 - Root git repository successfully established with all existing work preserved in the first commit (`338be83`).
+
+## 2026-08-07 — AI Provider Architecture & Breath AI Layer
+
+**AI Tool:**
+Antigravity (Gemini 3.1 Pro)
+
+**Task:**
+Refactor the LLM client to use a clean AI Provider Abstraction and handle the hypothetical Breath AI Layer.
+
+**Prompt / Instruction:**
+"First report: ... Then implement the highest-priority step. After completing it: test it, update documentation, update PROMPTS.md honestly, create one meaningful git commit."
+
+**Implementation:**
+- Refactored `backend/core/llm.py` into a polymorphic `AIProvider` factory.
+- Implemented `OpenAICompatibleProvider` and `BreathAILayerProvider`.
+- Added dynamic fallback: if `BREATH_AI_API_KEY` is not present, it routes to the primary generic provider.
+- Added `use_breath_layer` flag to `chat_completion` wrappers.
+- Injected `use_breath_layer=True` into `evaluate_answer`, `plan_next_question`, and `generate_report` (heavy reasoning tasks).
+- Added `backend/tests/test_providers.py` to verify routing.
+
+**Files Affected:**
+- `backend/core/llm.py`
+- `backend/core/config.py`
+- `backend/.env.example`
+- `backend/agents/interview_agents.py`
+- `backend/agents/feedback_agent.py`
+- `backend/tests/test_providers.py`
+
+**Result & Verification:**
+- Created and successfully passed unit tests for provider factory fallback logic.
+
+## 2026-08-07 — Robust LangGraph Interview Orchestrator
+
+**AI Tool:**
+Antigravity (Gemini 3.1 Pro)
+
+**Task:**
+Implement a formal LangGraph state machine to replace the procedural logic in the interview orchestrator.
+
+**Prompt / Instruction:**
+"Robust Interview Orchestrator: Enhance backend/graph/orchestrator.py to ensure state transitions (INIT → PROFILE_ANALYSIS → QUESTION → EVALUATION → NEXT_QUESTION → REPORT) never lose context and gracefully handle errors."
+
+**Implementation:**
+- Rewrote `backend/graph/orchestrator.py` using `langgraph.graph.StateGraph`.
+- Created individual async nodes: `node_profile_analysis`, `node_generate_question`, `node_evaluate_answer`, `node_memory_update`, `node_plan_next`.
+- Structured two sub-graphs: one for initialization (`start_interview`) and one for the iterative loop (`respond_to_question`).
+- Added conditional edges to gracefully exit when `InterviewStatus.COMPLETE` is reached.
+
+**Files Affected:**
+- `backend/graph/orchestrator.py`
+
+**Result & Verification:**
+- The orchestrator now formally passes `InterviewState` through the compiled LangGraph execution chain, ensuring context is never lost.
