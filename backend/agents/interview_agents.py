@@ -2,7 +2,7 @@
 Athena AI — Question Generator Agent
 Generates questions based on topic, type, difficulty, and candidate context
 """
-from core.llm import chat_completion, parse_json_response
+from core.llm import chat_completion, chat_completion_with_retry, parse_json_response
 from models.interview import QuestionType, DifficultyLevel, ReasoningTrace
 from loguru import logger
 
@@ -90,6 +90,10 @@ async def evaluate_answer(
     Evaluate a candidate's answer.
     Returns: score (0-1), feedback, dimension_scores
     """
+    # Truncate excessively large candidate answers to keep the prompt focused
+    # for the local model.
+    truncated_answer = answer[:500] if answer else ""
+
     messages = [
         {
             "role": "system",
@@ -106,7 +110,7 @@ Topic: {topic}
 Type: {question_type.value}
 Difficulty Level: {difficulty.value}/7
 
-Candidate's Answer: {answer}
+Candidate's Answer: {truncated_answer}
 
 Evaluate and return JSON with this exact structure:
 {{
@@ -122,11 +126,14 @@ Evaluate and return JSON with this exact structure:
     ]
 
     try:
-        result_str = await chat_completion(messages, temperature=0.3, max_tokens=512, json_mode=True, use_breath_layer=True)
+        result_str = await chat_completion_with_retry(
+            messages, temperature=0.3, max_tokens=512, json_mode=True, use_breath_layer=True
+        )
         result = parse_json_response(result_str)
         return result
     except Exception as e:
-        logger.error(f"Evaluation failed: {e}")
+        logger.error(f"Evaluation failed after retries: {e}")
+        # Controlled fallback — clearly not an LLM decision.
         return {
             "score": 0.5,
             "technical_accuracy": 0.5,
@@ -200,17 +207,21 @@ Return JSON:
     ]
 
     try:
-        result_str = await chat_completion(messages, temperature=0.4, max_tokens=512, json_mode=True, use_breath_layer=True)
+        result_str = await chat_completion_with_retry(
+            messages, temperature=0.4, max_tokens=512, json_mode=True, use_breath_layer=True
+        )
         result = parse_json_response(result_str)
         return result
     except Exception as e:
-        logger.error(f"Planning failed: {e}")
-        # Fallback: pick first weak topic
+        logger.error(f"Planning failed after retries: {e}")
+        # Controlled fallback — clearly not an LLM decision.
+        # Pick a topic from an uncovered curriculum day to ensure progress.
         fallback_topic = weak_topics[0] if weak_topics else topic
         return {
             "next_topic": fallback_topic,
             "question_type": "theory",
             "difficulty": 2,
-            "rationale": "Fallback decision",
+            "rationale": "Fallback decision (LLM unavailable)",
             "human_explanation": f"Exploring your knowledge of {fallback_topic}.",
+            "fallback": True,
         }

@@ -2,6 +2,7 @@
 Athena AI — Provider-Agnostic LLM Client
 Implements a factory pattern to route traffic between Primary LLM and Breath AI Layer.
 """
+import asyncio
 import json
 import re
 from abc import ABC, abstractmethod
@@ -11,19 +12,77 @@ from core.config import settings
 from loguru import logger
 
 
+class EmptyLLMResponse(Exception):
+    """Raised when the LLM returns an empty response where content was expected."""
+
+
 def parse_json_response(text: str) -> Any:
     """
     Parse a JSON string returned by an LLM, tolerating markdown code fences
     and surrounding prose. LM Studio / local models often wrap JSON in
-    ```json ... ``` blocks.
+    ```json ... ``` blocks or embed it in prose.
     """
-    if not text:
-        raise ValueError("Empty LLM response — expected JSON")
+    if not text or not text.strip():
+        raise EmptyLLMResponse("Empty LLM response — expected JSON")
     # Strip markdown code fences if present
     fenced = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
     if fenced:
         text = fenced.group(1).strip()
-    return json.loads(text)
+    # If the whole string is not valid JSON, try to extract the first
+    # balanced JSON object/array from surrounding prose.
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        # Find the first '{' or '[' and the matching last '}' or ']'
+        start = min(
+            [i for i in (text.find("{"), text.find("[")) if i != -1],
+            default=-1,
+        )
+        if start == -1:
+            raise
+        end_char = "}" if text[start] == "{" else "]"
+        end = text.rfind(end_char)
+        if end == -1 or end <= start:
+            raise
+        return json.loads(text[start : end + 1])
+
+
+async def chat_completion_with_retry(
+    messages: List[Dict[str, str]],
+    model: Optional[str] = None,
+    temperature: float = 0.7,
+    max_tokens: int = 2048,
+    json_mode: bool = False,
+    use_breath_layer: bool = False,
+    max_retries: Optional[int] = None,
+) -> str:
+    """
+    Call chat_completion with retries on empty responses or transient errors.
+    Returns the raw text response. Raises the last error if all retries fail.
+    """
+    retries = max_retries if max_retries is not None else settings.LLM_MAX_RETRIES
+    last_error: Optional[Exception] = None
+    for attempt in range(retries + 1):
+        try:
+            result = await chat_completion(
+                messages=messages,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                json_mode=json_mode,
+                use_breath_layer=use_breath_layer,
+            )
+            if json_mode and (not result or not result.strip()):
+                raise EmptyLLMResponse("Empty LLM response — expected JSON")
+            return result
+        except Exception as e:  # noqa: BLE001 - retry on any provider/parse error
+            last_error = e
+            logger.warning(
+                f"LLM call attempt {attempt + 1}/{retries + 1} failed: {e}"
+            )
+            if attempt < retries:
+                await asyncio.sleep(settings.LLM_RETRY_DELAY_SECONDS)
+    raise last_error  # type: ignore[misc]
 
 
 class AIProvider(ABC):

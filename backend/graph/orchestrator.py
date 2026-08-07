@@ -213,6 +213,29 @@ async def node_plan_next(state: InterviewState) -> InterviewState:
     next_type = QuestionType(plan.get("question_type", "theory"))
     next_diff = DifficultyLevel(min(max(int(plan.get("difficulty", 2)), 1), 7))
     
+    # If the LLM planning failed (controlled fallback), use the knowledge graph
+    # to deterministically select a topic from an uncovered curriculum day.
+    # This ensures the interview progresses toward the 4-day requirement even
+    # when the local model cannot produce a valid plan.
+    used_fallback = bool(plan.get("fallback"))
+    if used_fallback:
+        uncovered_days = sorted(
+            {d for d in range(1, 26) if d not in state.curriculum_days_covered}
+        )
+        fallback_topic = None
+        for day in uncovered_days:
+            candidates = [
+                t for t in graph.get_topics_for_day(day)
+                if t not in state.topics_covered
+            ]
+            if candidates:
+                fallback_topic = candidates[0]
+                break
+        if fallback_topic:
+            next_topic = fallback_topic
+            next_type = QuestionType.THEORY
+            next_diff = DifficultyLevel.MEDIUM
+    
     state.questions_asked += 1
     state.current_topic = next_topic
     state.current_question_type = next_type

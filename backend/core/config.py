@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     MAX_QUESTIONS: int = 15
     SESSION_TIMEOUT_MINUTES: int = 60
 
+    # LLM retry behavior
+    LLM_MAX_RETRIES: int = 2
+    LLM_RETRY_DELAY_SECONDS: float = 0.5
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

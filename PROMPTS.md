@@ -126,3 +126,34 @@ Populate `current_reasoning_trace` in the interview orchestrator so the Explaina
 - Unit tests run: `test_basic.py` ✅ PASSED, `test_providers.py` ✅ PASSED.
 - End-to-end test `test_e2e_flow.py`: ⚠️ FAILED — the local Gemma model (`google/gemma-4-e4b`) returns empty content for the complex JSON evaluation/planning prompts, so the interview never reaches 4 curriculum days and never completes. This is a local-model capability limitation, not a defect in the reasoning-trace implementation. The reasoning trace itself was verified populated via a direct verification script.
 - Note: `backend/requirements.txt` has a pre-existing dependency conflict (`openai==1.51.2` vs `langchain-openai==0.2.3` requiring `openai>=1.52.0`). For testing, dependencies were installed with `openai==1.52.0`; the committed `requirements.txt` was not modified.
+
+## 2026-08-08 — Harden Local LM Studio Interview Loop
+
+**AI Tool:**
+Cline (OpenAI-compatible, connected to LM Studio)
+
+**Task:**
+Make the existing Athena interview pipeline reliably complete the 8-question / 4-curriculum-day flow using the local LM Studio model (`google/gemma-4-e4b`).
+
+**Prompt / Instruction:**
+"ATHENA — PLAN NEXT MILESTONE: RELIABLE LOCAL LM STUDIO E2E LOOP... Make this complete successfully using LM Studio: Candidate → Question Generation → Answer Evaluation → Knowledge Graph update → Chief Planner → ReasoningTrace → Next Question → 8 questions → 4 curriculum days → Final Report."
+
+**Implementation:**
+- `backend/core/llm.py`: added `EmptyLLMResponse` exception; enhanced `parse_json_response()` to handle markdown-fenced JSON, JSON embedded in prose, and empty responses; added `chat_completion_with_retry()` wrapper with configurable retries.
+- `backend/core/config.py`: added `LLM_MAX_RETRIES=2` and `LLM_RETRY_DELAY_SECONDS=0.5`.
+- `backend/agents/interview_agents.py`: `evaluate_answer` now truncates large answers and uses the retry wrapper; `plan_next_question` uses the retry wrapper and returns a clearly-marked `fallback: True` on genuine failure.
+- `backend/graph/orchestrator.py`: `node_plan_next` now uses the knowledge graph to deterministically select a topic from an **uncovered curriculum day** when the LLM planning fails, ensuring progress toward the 4-day requirement.
+- `backend/tests/test_llm_parsing.py`: new deterministic unit tests (no LM Studio) for JSON parsing, retry behavior, and curriculum fallback selection.
+
+**Files Affected:**
+- `backend/core/llm.py`
+- `backend/core/config.py`
+- `backend/agents/interview_agents.py`
+- `backend/graph/orchestrator.py`
+- `backend/tests/test_llm_parsing.py`
+
+**Result & Verification:**
+- Unit tests: `test_llm_parsing.py` (9 tests) ✅ PASSED, `test_basic.py` ✅ PASSED, `test_providers.py` ✅ PASSED.
+- E2E test `test_e2e_flow.py` ✅ PASSED — 8 questions, 8 curriculum days, final report generated.
+- **Honest E2E breakdown:** The local Gemma model successfully generated all 8 interview questions (non-JSON calls). However, **every structured JSON call** (`evaluate_answer`, `plan_next_question`, `generate_report`) returned empty content even after retries, so the **controlled fallback was used for all structured decisions**. The deterministic curriculum fallback correctly drove the interview across 8 distinct curriculum days. The E2E passed because the fallback logic is robust, not because Gemma produced valid JSON.
+- The dependency conflict (`openai==1.51.2` vs `langchain-openai==0.2.3` requiring `openai>=1.52.0`) was not modified; testing used `openai==1.52.0` in the venv only.
