@@ -11,9 +11,9 @@ from langgraph.graph import StateGraph, END
 
 from models.interview import (
     InterviewState, InterviewStatus, CandidateProfile,
-    QuestionType, DifficultyLevel, StartInterviewRequest,
-    StartInterviewResponse, RespondRequest, RespondResponse,
-    FeedbackReport
+    QuestionType, DifficultyLevel, ReasoningTrace,
+    StartInterviewRequest, StartInterviewResponse,
+    RespondRequest, RespondResponse, FeedbackReport
 )
 from knowledge.knowledge_graph import KnowledgeGraph
 from memory.memory_engine import MemoryEngine
@@ -52,6 +52,26 @@ async def node_profile_analysis(state: InterviewState) -> InterviewState:
     state.current_topic = first_topic
     state.current_curriculum_day = graph.get_curriculum_day(first_topic)
     
+    # Build initial Explainable AI reasoning trace from the actual profile decision
+    if first_topic in skipped:
+        initial_explanation = (
+            f"We're starting with {first_topic} because you marked it as skipped — "
+            "let's verify your understanding of this topic."
+        )
+    else:
+        initial_explanation = (
+            f"We're starting with {first_topic} as a foundational concept "
+            "to establish your baseline knowledge."
+        )
+    state.current_reasoning_trace = ReasoningTrace(
+        weak_node=first_topic if first_topic in skipped else None,
+        dependency_path=graph.get_dependency_path(first_topic),
+        proposing_agent="profile_analyzer",
+        chief_rationale="Initial topic selected from candidate profile and curriculum prerequisites.",
+        human_explanation=initial_explanation,
+        difficulty_rationale="Starting at moderate difficulty to gauge the candidate's baseline.",
+    )
+    
     # Store instances in global memory for this session
     _sessions[state.session_id]["graph"] = graph
     _sessions[state.session_id]["memory"] = MemoryEngine()
@@ -65,9 +85,13 @@ async def node_generate_question(state: InterviewState) -> InterviewState:
     
     memory = _sessions[state.session_id]["memory"]
     
+    # Ensure a valid question type is set on state (defaults to theory for the first question)
+    if state.current_question_type is None:
+        state.current_question_type = QuestionType.THEORY
+    
     question = await generate_question(
         topic=state.current_topic or "AI Foundations",
-        question_type=state.current_question_type or QuestionType.THEORY,
+        question_type=state.current_question_type,
         difficulty=state.current_difficulty,
         context=memory.get_context_for_llm(),
         last_answer=state.last_answer,
@@ -195,6 +219,22 @@ async def node_plan_next(state: InterviewState) -> InterviewState:
     state.current_difficulty = next_diff
     state.current_curriculum_day = graph.get_curriculum_day(next_topic)
     
+    # Build Explainable AI reasoning trace from the actual planning decision.
+    # Uses only the decision metadata produced by the planning agent — no hidden chain-of-thought.
+    state.current_reasoning_trace = ReasoningTrace(
+        weak_node=next_topic if next_topic in weak_topics else None,
+        dependency_path=graph.get_dependency_path(next_topic),
+        proposing_agent="chief_interview_agent",
+        chief_rationale=plan.get("rationale", "Next topic selected based on interview progress."),
+        human_explanation=plan.get(
+            "human_explanation",
+            f"Moving on to {next_topic} to continue assessing your knowledge.",
+        ),
+        difficulty_rationale=(
+            f"Difficulty set to level {next_diff.value} based on your recent performance."
+        ),
+    )
+    
     return state
 
 
@@ -215,14 +255,16 @@ def route_after_planning(state: InterviewState) -> str:
 workflow = StateGraph(InterviewState)
 workflow.add_node("profile_analysis", node_profile_analysis)
 workflow.add_node("generate_question", node_generate_question)
-workflow.add_node("evaluate_answer", node_evaluate_answer)
-workflow.add_node("memory_update", node_memory_update)
-workflow.add_node("plan_next", node_plan_next)
 
 # Initialization Flow
 workflow.set_entry_point("profile_analysis")
 workflow.add_edge("profile_analysis", "generate_question")
 workflow.add_edge("generate_question", END)
+
+# NOTE: evaluate_answer, memory_update, and plan_next are intentionally NOT
+# declared on the main init graph — they are only used in the dynamic response
+# sub-graph built inside respond_to_question(). Declaring them here made them
+# unreachable, which caused langgraph.compile() to fail validation.
 
 # Response Flow
 # To hook into LangGraph manually without cyclical hanging:
@@ -255,7 +297,8 @@ async def start_interview(request: StartInterviewRequest) -> StartInterviewRespo
     _sessions[session_id] = {"state": state}
     
     # Run the init subgraph (Profile Analysis -> Generate Question)
-    final_state = await app.ainvoke(state)
+    # LangGraph returns a dict-like AddableValuesDict; reconstruct the Pydantic state.
+    final_state = InterviewState(**await app.ainvoke(state))
     _sessions[session_id]["state"] = final_state
     
     return StartInterviewResponse(
@@ -301,7 +344,8 @@ async def respond_to_question(request: RespondRequest) -> RespondResponse:
     resp_app = resp_workflow.compile()
     
     # Execute the response chain
-    final_state = await resp_app.ainvoke(state)
+    # LangGraph returns a dict-like AddableValuesDict; reconstruct the Pydantic state.
+    final_state = InterviewState(**await resp_app.ainvoke(state))
     _sessions[request.session_id]["state"] = final_state
     
     return RespondResponse(

@@ -3,7 +3,7 @@ Athena AI — Feedback & Learning Planner Agent
 Generates the structured recruiter report and personalized learning roadmap
 """
 import json
-from core.llm import chat_completion
+from core.llm import chat_completion, parse_json_response
 from models.interview import (
     FeedbackReport, DimensionScore, HiringRecommendation, InterviewState
 )
@@ -126,7 +126,7 @@ Generate a comprehensive assessment as JSON:
 
     try:
         result_str = await chat_completion(messages, temperature=0.2, max_tokens=1024, json_mode=True, use_breath_layer=True)
-        assessment = json.loads(result_str)
+        assessment = parse_json_response(result_str)
     except Exception as e:
         logger.error(f"Report generation LLM failed: {e}")
         assessment = {

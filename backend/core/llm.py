@@ -2,11 +2,28 @@
 Athena AI — Provider-Agnostic LLM Client
 Implements a factory pattern to route traffic between Primary LLM and Breath AI Layer.
 """
+import json
+import re
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 from openai import AsyncOpenAI
 from core.config import settings
 from loguru import logger
+
+
+def parse_json_response(text: str) -> Any:
+    """
+    Parse a JSON string returned by an LLM, tolerating markdown code fences
+    and surrounding prose. LM Studio / local models often wrap JSON in
+    ```json ... ``` blocks.
+    """
+    if not text:
+        raise ValueError("Empty LLM response — expected JSON")
+    # Strip markdown code fences if present
+    fenced = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
+    if fenced:
+        text = fenced.group(1).strip()
+    return json.loads(text)
 
 
 class AIProvider(ABC):
@@ -45,8 +62,10 @@ class OpenAICompatibleProvider(AIProvider):
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
-        if json_mode:
-            kwargs["response_format"] = {"type": "json_object"}
+        # NOTE: json_mode does NOT set response_format. LM Studio rejects
+        # "json_object" and returns empty content for "text". The prompts
+        # already instruct the model to return strict JSON, so we omit
+        # response_format entirely for maximum provider compatibility.
 
         response = await self.client.chat.completions.create(**kwargs)
         return response.choices[0].message.content
@@ -74,8 +93,8 @@ class BreathAILayerProvider(AIProvider):
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
-        if json_mode:
-            kwargs["response_format"] = {"type": "json_object"}
+        # Same compatibility fix as OpenAICompatibleProvider: omit
+        # response_format entirely so LM Studio returns content.
             
         response = await self.client.chat.completions.create(**kwargs)
         return response.choices[0].message.content

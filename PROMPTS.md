@@ -88,3 +88,41 @@ Implement a formal LangGraph state machine to replace the procedural logic in th
 
 **Result & Verification:**
 - The orchestrator now formally passes `InterviewState` through the compiled LangGraph execution chain, ensuring context is never lost.
+
+## 2026-08-08 — Explainable Interview Reasoning Trace
+
+**AI Tool:**
+Cline (OpenAI-compatible, connected to LM Studio)
+
+**Task:**
+Populate `current_reasoning_trace` in the interview orchestrator so the Explainable AI panel works end-to-end.
+
+**Prompt / Instruction:**
+"ATHENA — IMPLEMENT REASONING TRACE... Make Athena's Explainable AI reasoning trace work end-to-end... Populate current_reasoning_trace using the REAL information already produced by the existing planning system."
+
+**Implementation:**
+- Added `ReasoningTrace` import to `backend/graph/orchestrator.py`.
+- In `node_profile_analysis`: built the initial reasoning trace from the actual profile decision (skipped-topic vs. foundational-topic selection), including `weak_node`, `dependency_path`, `proposing_agent`, `chief_rationale`, `human_explanation`, and `difficulty_rationale`.
+- In `node_plan_next`: built the per-question reasoning trace from the real `plan_next_question` decision metadata (`next_topic`, `rationale`, `human_explanation`, `difficulty`), plus the knowledge graph dependency path and weak-topic detection.
+- No new agents, no hardcoded explanations, no hidden chain-of-thought exposed — only the actual decision metadata produced by the existing planning system.
+- Frontend required no changes: it already consumes `reasoning_trace` via `frontend/lib/api.ts` and renders it in `frontend/app/interview/page.tsx`.
+
+**Additional fixes required to make the backend runnable and testable (pre-existing defects discovered during testing):**
+- `backend/graph/orchestrator.py`: removed `evaluate_answer`, `memory_update`, `plan_next` from the main init graph — they were unreachable, causing `langgraph.compile()` to fail with `ValueError: Node 'evaluate_answer' is not reachable`.
+- `backend/graph/orchestrator.py`: reconstructed `InterviewState` from LangGraph's dict-like `AddableValuesDict` return value in `start_interview` and `respond_to_question` (previously accessed attributes directly, causing `AttributeError`).
+- `backend/graph/orchestrator.py`: defaulted `current_question_type` to `QuestionType.THEORY` in `node_generate_question` (previously `None`, causing Pydantic validation failure on `StartInterviewResponse`).
+- `backend/core/llm.py`: removed `response_format` from JSON-mode requests — LM Studio rejects `"json_object"` (HTTP 400) and returns empty content for `"text"`. The prompts already instruct the model to return strict JSON.
+- `backend/core/llm.py`: added `parse_json_response()` helper that strips markdown code fences (```json ... ```) before `json.loads()`, since local models wrap JSON output in fences.
+- `backend/agents/interview_agents.py` and `backend/agents/feedback_agent.py`: switched from `json.loads()` to `parse_json_response()`.
+
+**Files Affected:**
+- `backend/graph/orchestrator.py`
+- `backend/core/llm.py`
+- `backend/agents/interview_agents.py`
+- `backend/agents/feedback_agent.py`
+
+**Result & Verification:**
+- The `start_interview` response now includes a populated `reasoning_trace` with real decision data (verified directly: `weak_node='RAG'`, `dependency_path=['RAG', 'Reranker', 'Embeddings', 'Prompt Engineering', 'Chunking']`, `proposing_agent='profile_analyzer'`, `human_explanation="We're starting with RAG because you marked it as skipped..."`).
+- Unit tests run: `test_basic.py` ✅ PASSED, `test_providers.py` ✅ PASSED.
+- End-to-end test `test_e2e_flow.py`: ⚠️ FAILED — the local Gemma model (`google/gemma-4-e4b`) returns empty content for the complex JSON evaluation/planning prompts, so the interview never reaches 4 curriculum days and never completes. This is a local-model capability limitation, not a defect in the reasoning-trace implementation. The reasoning trace itself was verified populated via a direct verification script.
+- Note: `backend/requirements.txt` has a pre-existing dependency conflict (`openai==1.51.2` vs `langchain-openai==0.2.3` requiring `openai>=1.52.0`). For testing, dependencies were installed with `openai==1.52.0`; the committed `requirements.txt` was not modified.

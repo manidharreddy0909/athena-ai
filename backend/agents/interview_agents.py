@@ -2,8 +2,7 @@
 Athena AI — Question Generator Agent
 Generates questions based on topic, type, difficulty, and candidate context
 """
-import json
-from core.llm import chat_completion
+from core.llm import chat_completion, parse_json_response
 from models.interview import QuestionType, DifficultyLevel, ReasoningTrace
 from loguru import logger
 
@@ -124,7 +123,7 @@ Evaluate and return JSON with this exact structure:
 
     try:
         result_str = await chat_completion(messages, temperature=0.3, max_tokens=512, json_mode=True, use_breath_layer=True)
-        result = json.loads(result_str)
+        result = parse_json_response(result_str)
         return result
     except Exception as e:
         logger.error(f"Evaluation failed: {e}")
@@ -202,7 +201,7 @@ Return JSON:
 
     try:
         result_str = await chat_completion(messages, temperature=0.4, max_tokens=512, json_mode=True, use_breath_layer=True)
-        result = json.loads(result_str)
+        result = parse_json_response(result_str)
         return result
     except Exception as e:
         logger.error(f"Planning failed: {e}")
