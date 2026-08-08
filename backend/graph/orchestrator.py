@@ -23,6 +23,7 @@ from agents.interview_agents import (
 )
 from agents.socratic_engine import should_follow_up, generate_socratic_followup, deep_evaluate_answer
 from agents.feedback_agent import generate_report
+from agents.resume_agent import analyze_resume_and_jd
 from core.multilingual import MultilingualService
 from core.config import settings
 
@@ -51,6 +52,21 @@ async def node_profile_analysis(state: InterviewState) -> InterviewState:
     graph = KnowledgeGraph()
     for topic, confidence in state.candidate.learning_signals.items():
         graph.update_confidence(topic, confidence)
+
+    # Phase 10: Analyze Resume & JD if provided
+    resume_analysis = await analyze_resume_and_jd(
+        resume_text=state.candidate.resume_text or "",
+        jd_text=state.candidate.jd_text or "",
+        domain_engine=domain_engine,
+    )
+    
+    # If focus topics were found from the resume/JD, treat them as skipped/weak topics to target
+    focus_topics = resume_analysis.get("focus_topics", [])
+    if focus_topics:
+        logger.info(f"[{state.session_id}] Resume/JD analysis identified focus topics: {focus_topics}")
+        for ft in focus_topics:
+            if ft not in state.candidate.skipped_topics:
+                state.candidate.skipped_topics.append(ft)
 
     # Pick first topic using domain engine
     first_topic = domain_engine.get_initial_topic(state.candidate.skipped_topics)
@@ -413,6 +429,8 @@ async def start_interview(request: StartInterviewRequest) -> StartInterviewRespo
         completed_missions=request.completed_missions,
         skipped_topics=request.skipped_topics,
         learning_signals=request.learning_signals or {},
+        resume_text=request.resume_text,
+        jd_text=request.jd_text,
     )
     
     state = InterviewState(

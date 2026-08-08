@@ -65,6 +65,8 @@ class CandidateProfile(BaseModel):
     attempts: Dict[str, int] = Field(default_factory=dict, description="Topic -> attempt count")
     learning_signals: Dict[str, float] = Field(default_factory=dict, description="Topic -> confidence 0-1")
     curriculum_json: Optional[Dict[str, Any]] = None
+    resume_text: Optional[str] = Field(default=None, description="Candidate's extracted resume text")
+    jd_text: Optional[str] = Field(default=None, description="Job description text")
 
 
 # ─────────────────────────────────────────────
@@ -94,6 +96,8 @@ class StartInterviewRequest(BaseModel):
     domain: Optional[str] = Field(default="ai_ml", description="Interview domain: ai_ml, software_engineering, data_engineering, cloud_devops, etc.")
     language: Optional[str] = Field(default="en", description="Interview language code: en, hi, te, es, fr, de, zh, ar, etc.")
     mode: Optional[str] = Field(default="general", description="Interview mode: general, coding, system_design")
+    resume_text: Optional[str] = Field(default=None, description="Candidate's resume text")
+    jd_text: Optional[str] = Field(default=None, description="Target job description")
 
 
 class StartInterviewResponse(BaseModel):
