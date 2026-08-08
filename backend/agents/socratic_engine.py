@@ -53,6 +53,7 @@ async def generate_socratic_followup(
     score: float,
     difficulty: DifficultyLevel,
     language: str = "en",
+    personality: str = "professional",
 ) -> str:
     """
     Generate a targeted Socratic follow-up question based on the candidate's specific answer.
@@ -61,7 +62,7 @@ async def generate_socratic_followup(
     from core.multilingual import MultilingualService
 
     base_system_prompt = (
-        "You are Athena, a Socratic technical interviewer. Your job is to probe deeper "
+        f"You are Athena, a {personality} Socratic technical interviewer. Your job is to probe deeper "
         "into a candidate's answer to expose gaps or test real understanding. "
         "Do NOT repeat the original question. DO reference specific things the "
         "candidate said. Ask exactly ONE probing follow-up question. "

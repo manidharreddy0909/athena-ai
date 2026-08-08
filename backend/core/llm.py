@@ -127,13 +127,13 @@ class LocalProvider(OpenAICompatibleProvider):
         )
 
 
-class BreathAILayerProvider(OpenAICompatibleProvider):
-    """Provider specifically for the Breath AI Layer Pro API."""
-    def __init__(self, api_key: str):
+class BreethAILayerProvider(OpenAICompatibleProvider):
+    """Provider specifically for the BREETH AI Memory API."""
+    def __init__(self, api_key: str, base_url: str = "https://api.breeth.ai/v1"):
         super().__init__(
-            base_url="https://api.breath.ai/v1",
+            base_url=base_url,
             api_key=api_key,
-            default_model="breath-reasoning-v1"
+            default_model="breeth-memory-v1"
         )
 
 
@@ -163,7 +163,7 @@ class ModelRegistry:
         
         # Role mappings
         mapping = {
-            LogicRole.FAST: (gemini_provider, "gemini-2.5-flash-8b"),
+            LogicRole.FAST: (gemini_provider, "gemini-2.5-flash"),
             LogicRole.BALANCED: (gemini_provider, "gemini-2.5-flash"),
             LogicRole.DEEP_REASONING: (gemini_provider, "gemini-2.5-pro"),
             LogicRole.CODING: (gemini_provider, "gemini-2.5-pro"),
@@ -189,14 +189,17 @@ class ProviderFactory:
         return provider
 
     @classmethod
-    def get_breath_layer(cls) -> AIProvider:
-        """Returns Breath AI Layer if configured, otherwise falls back to Primary."""
-        if settings.BREATH_API_KEY:
+    def get_breeth_layer(cls) -> AIProvider:
+        """Returns BREETH AI if configured, otherwise falls back to Primary."""
+        if settings.BREETH_API_KEY:
             if not cls._breath_provider:
-                cls._breath_provider = BreathAILayerProvider(api_key=settings.BREATH_API_KEY)
+                cls._breath_provider = BreethAILayerProvider(
+                    api_key=settings.BREETH_API_KEY,
+                    base_url=settings.BREETH_BASE_URL,
+                )
             return cls._breath_provider
         
-        logger.debug("Breath AI Layer not configured. Falling back to Primary Provider.")
+        logger.debug("BREETH AI not configured. Falling back to Primary Provider.")
         return cls.get_primary()
 
     @classmethod

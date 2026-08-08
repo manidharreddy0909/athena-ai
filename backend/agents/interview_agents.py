@@ -58,6 +58,7 @@ async def generate_question(
     last_answer: str = "",
     candidate_name: str = "the candidate",
     language: str = "en",
+    personality: str = "professional",
 ) -> str:
     """Generate a single interview question using the LLM."""
     from core.multilingual import MultilingualService
@@ -67,11 +68,11 @@ async def generate_question(
     difficulty_mod = DIFFICULTY_MODIFIERS.get(difficulty, "")
 
     base_system_prompt = (
-        "You are Athena, a senior technical interview specialist. "
+        f"You are Athena, a {personality} technical interview specialist. "
         "Generate ONE clear, specific interview question. "
         "Do NOT include the answer. Do NOT explain the question. "
         "Output ONLY the question text. "
-        "Make it conversational and professional."
+        f"Adopt a {personality} tone."
     )
 
     # Phase 8: wrap with language instruction if not English

@@ -11,6 +11,7 @@ const DOMAINS = [
   { id: "software_engineering", name: "Software Engineering", icon: Code2 },
   { id: "data_engineering", name: "Data Engineering", icon: LayoutDashboard },
   { id: "cloud_devops", name: "Cloud / DevOps", icon: Cpu },
+  { id: "custom", name: "Custom Topic", icon: MessageSquare },
 ];
 
 const MODES = [
@@ -21,10 +22,27 @@ const MODES = [
 
 const LANGUAGES = [
   { id: "en", name: "English" },
+  { id: "te", name: "Telugu" },
   { id: "es", name: "Español" },
   { id: "hi", name: "Hindi" },
   { id: "fr", name: "Français" },
   { id: "zh", name: "Chinese" },
+];
+
+const DIFFICULTIES = [
+  { id: "easy", name: "Beginner" },
+  { id: "medium", name: "Intermediate" },
+  { id: "hard", name: "Advanced" },
+  { id: "expert", name: "Expert" },
+  { id: "adaptive", name: "Adaptive" }
+];
+
+const PERSONALITIES = [
+  { id: "professional", name: "Professional" },
+  { id: "friendly", name: "Friendly" },
+  { id: "strict", name: "Strict" },
+  { id: "socratic", name: "Socratic" },
+  { id: "faang", name: "FAANG-style" }
 ];
 
 export default function Home() {
@@ -36,8 +54,12 @@ export default function Home() {
     completed_missions: [1, 2, 3, 5, 7],
     skipped_topics: [],
     domain: "ai_ml",
+    custom_domain_topic: "",
     mode: "general",
+    difficulty: "medium",
+    personality: "professional",
     language: "en",
+    provider: "gemini",
     resume_text: "",
     jd_text: "",
   });
@@ -127,6 +149,17 @@ export default function Home() {
                       </button>
                     ))}
                   </div>
+                  {profile.domain === "custom" && (
+                    <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="mt-3">
+                      <input
+                        type="text"
+                        placeholder="e.g. Quantum Computing, Kubernetes..."
+                        value={profile.custom_domain_topic}
+                        onChange={(e) => setProfile({ ...profile, custom_domain_topic: e.target.value })}
+                        className="w-full bg-black/40 border border-white/10 rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-accent-primary transition-colors text-sm"
+                      />
+                    </motion.div>
+                  )}
                 </div>
 
                 <div className="flex justify-end pt-4">
@@ -157,6 +190,37 @@ export default function Home() {
                         <span className="text-xs text-text-secondary mt-1">{m.desc}</span>
                       </button>
                     ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm text-text-secondary mb-3">Difficulty</label>
+                    <div className="space-y-2">
+                      {DIFFICULTIES.map(d => (
+                        <button
+                          key={d.id}
+                          onClick={() => setProfile({ ...profile, difficulty: d.id })}
+                          className={`w-full px-3 py-2 text-left rounded-lg border text-sm transition-all ${profile.difficulty === d.id ? 'bg-white/10 text-white border-white/20' : 'bg-transparent border-transparent hover:bg-white/5 text-text-secondary'}`}
+                        >
+                          {d.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-text-secondary mb-3">Interviewer Persona</label>
+                    <div className="space-y-2">
+                      {PERSONALITIES.map(p => (
+                        <button
+                          key={p.id}
+                          onClick={() => setProfile({ ...profile, personality: p.id })}
+                          className={`w-full px-3 py-2 text-left rounded-lg border text-sm transition-all ${profile.personality === p.id ? 'bg-white/10 text-white border-white/20' : 'bg-transparent border-transparent hover:bg-white/5 text-text-secondary'}`}
+                        >
+                          {p.name}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
 

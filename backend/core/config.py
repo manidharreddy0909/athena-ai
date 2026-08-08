@@ -15,7 +15,8 @@ class Settings(BaseSettings):
     # Core external providers required for full architecture
     # ----------------------------------------------------------
     GEMINI_API_KEY: str = ""
-    BREATH_API_KEY: str = ""
+    BREETH_API_KEY: str = ""
+    BREETH_BASE_URL: str = "https://api.breeth.ai/v1"
     VOICE_API_KEY: str = ""
 
     # Database

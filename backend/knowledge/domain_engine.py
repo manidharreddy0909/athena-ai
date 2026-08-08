@@ -7,6 +7,8 @@ from structured YAML/JSON configs.
 from typing import Dict, List, Optional, Any
 from loguru import logger
 from enum import Enum
+import json
+from core.llm import chat_completion
 
 
 class InterviewDomain(str, Enum):
@@ -138,6 +140,53 @@ class DomainEngine:
     Provides domain-specific knowledge graphs, competency maps,
     and prompt context for any interview domain.
     """
+
+    @classmethod
+    async def create(cls, domain: InterviewDomain, custom_topic: Optional[str] = None) -> 'DomainEngine':
+        if domain == InterviewDomain.CUSTOM and custom_topic:
+            try:
+                config = await cls.generate_custom_domain(custom_topic)
+                return cls(domain, custom_config=config)
+            except Exception as e:
+                logger.error(f"Failed to generate custom domain config for '{custom_topic}': {e}")
+                # Fallback
+                return cls(InterviewDomain.AI_ML)
+        return cls(domain)
+
+    @classmethod
+    async def generate_custom_domain(cls, topic: str) -> Dict[str, Any]:
+        """Dynamically generate a Domain Config for a custom topic using LLM."""
+        prompt = (
+            f"Generate a technical interview curriculum knowledge graph for the topic: '{topic}'.\n"
+            "Respond ONLY with a valid JSON object following exactly this schema:\n"
+            "{\n"
+            "  \"name\": \"Name of the topic\",\n"
+            "  \"description\": \"Brief description\",\n"
+            "  \"nodes\": [ {\"id\": \"Subtopic 1\", \"day\": 1, \"category\": \"foundations\"}, ... ],\n"
+            "  \"edges\": [ [\"Subtopic 1\", \"Subtopic 2\"], ... ],\n"
+            "  \"core_competencies\": [\"Subtopic 1\", \"Subtopic 3\"]\n"
+            "}\n"
+            "Ensure there are at least 6 nodes across various 'days' (1 to 10), and logical directed edges where item 0 is a prerequisite for item 1."
+        )
+        
+        from core.llm import chat_completion, parse_json_response
+        response_text = await chat_completion(
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.4,
+            json_mode=True
+        )
+        
+        config = parse_json_response(response_text)
+        
+        # Ensure edges is a list of tuples as expected by __init__
+        if "edges" in config and isinstance(config["edges"], list):
+            new_edges = []
+            for edge in config["edges"]:
+                if isinstance(edge, list) and len(edge) == 2:
+                    new_edges.append((edge[0], edge[1]))
+            config["edges"] = new_edges
+            
+        return config
 
     def __init__(self, domain: InterviewDomain = InterviewDomain.AI_ML, custom_config: Optional[Dict] = None):
         self.domain = domain

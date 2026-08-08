@@ -7,7 +7,11 @@ export interface CandidateProfile {
   skipped_topics: string[];
   learning_signals?: Record<string, number>;
   domain?: string;
+  custom_domain_topic?: string;
   mode?: string;
+  difficulty?: string;
+  personality?: string;
+  provider?: string;
   language?: string;
   resume_text?: string;
   jd_text?: string;

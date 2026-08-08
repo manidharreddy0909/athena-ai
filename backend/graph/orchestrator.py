@@ -45,7 +45,7 @@ async def node_profile_analysis(state: InterviewState) -> InterviewState:
         logger.warning(f"Unknown domain '{state.domain}', falling back to ai_ml")
         domain_enum = InterviewDomain.AI_ML
 
-    domain_engine = DomainEngine(domain_enum)
+    domain_engine = await DomainEngine.create(domain_enum, state.custom_domain_topic)
     _sessions[state.session_id]["domain_engine"] = domain_engine
 
     # Pre-populate knowledge graph with candidate's learning signals
@@ -126,6 +126,7 @@ async def node_generate_question(state: InterviewState) -> InterviewState:
         last_answer=state.last_answer,
         candidate_name=state.candidate.name,
         language=state.language,
+        personality=state.personality,
     )
 
     state.current_question = question
@@ -239,6 +240,7 @@ async def node_plan_next(state: InterviewState) -> InterviewState:
             score=last_score,
             difficulty=state.current_difficulty,
             language=state.language,
+            personality=state.personality,
         )
         state.current_question = followup_q
         state.current_question_type = QuestionType.FOLLOW_UP
@@ -437,15 +439,25 @@ async def start_interview(request: StartInterviewRequest) -> StartInterviewRespo
         learning_signals=request.learning_signals or {},
         resume_text=request.resume_text,
         jd_text=request.jd_text,
+        personality=request.personality or "professional",
     )
     
+    try:
+        difficulty_enum = DifficultyLevel(request.difficulty) if request.difficulty else DifficultyLevel.MEDIUM
+    except ValueError:
+        difficulty_enum = DifficultyLevel.MEDIUM
+
     state = InterviewState(
         session_id=session_id,
         candidate=candidate,
         status=InterviewStatus.IN_PROGRESS,
         domain=request.domain or "ai_ml",
+        custom_domain_topic=request.custom_domain_topic,
         language=request.language or "en",
         mode=request.mode or "general",
+        personality=request.personality or "professional",
+        provider=request.provider or "gemini",
+        current_difficulty=difficulty_enum,
     )
     
     # Pre-populate in-memory storage so nodes can register memory/graph engines

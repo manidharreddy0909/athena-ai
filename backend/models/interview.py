@@ -67,6 +67,7 @@ class CandidateProfile(BaseModel):
     curriculum_json: Optional[Dict[str, Any]] = None
     resume_text: Optional[str] = Field(default=None, description="Candidate's extracted resume text")
     jd_text: Optional[str] = Field(default=None, description="Job description text")
+    personality: str = Field(default="professional", description="Interviewer personality style")
 
 
 # ─────────────────────────────────────────────
@@ -94,8 +95,11 @@ class StartInterviewRequest(BaseModel):
     curriculum_json: Optional[Dict[str, Any]] = None
     learning_signals: Optional[Dict[str, float]] = None
     domain: Optional[str] = Field(default="ai_ml", description="Interview domain: ai_ml, software_engineering, data_engineering, cloud_devops, etc.")
+    custom_domain_topic: Optional[str] = Field(default=None, description="Custom topic if domain is 'custom'")
     language: Optional[str] = Field(default="en", description="Interview language code: en, hi, te, es, fr, de, zh, ar, etc.")
     mode: Optional[str] = Field(default="general", description="Interview mode: general, coding, system_design")
+    difficulty: Optional[str] = Field(default="medium", description="Difficulty level string representation")
+    personality: Optional[str] = Field(default="professional", description="Interviewer personality (e.g. strict, friendly)")
     provider: Optional[str] = Field(default="gemini", description="LLM Provider selection: gemini, claude, local")
     resume_text: Optional[str] = Field(default=None, description="Candidate's resume text")
     jd_text: Optional[str] = Field(default=None, description="Target job description")
@@ -217,8 +221,10 @@ class InterviewState(BaseModel):
     current_difficulty: DifficultyLevel = DifficultyLevel.EASY
     current_reasoning_trace: Optional[ReasoningTrace] = None
     domain: str = Field(default="ai_ml", description="Interview domain")
+    custom_domain_topic: Optional[str] = Field(default=None, description="Custom domain topic if domain is custom")
     language: str = Field(default="en", description="Interview language code")
     mode: str = Field(default="general", description="Interview mode")
+    personality: str = Field(default="professional", description="Interviewer personality")
     provider: str = Field(default="gemini", description="LLM Provider")
 
     # History

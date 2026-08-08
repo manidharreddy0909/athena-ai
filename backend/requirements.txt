@@ -13,7 +13,7 @@ langchain-openai==0.2.3
 langchain-core==0.3.12
 
 # OpenAI-compatible client (works with OpenRouter, LM Studio, Groq)
-openai==1.51.2
+openai>=1.52.0
 
 # Database
 sqlalchemy[asyncio]==2.0.35
