@@ -140,10 +140,10 @@ Respond with valid JSON only:
     ]
 
     try:
-        from core.llm import chat_completion_with_retry
+        from core.llm import chat_completion_with_retry, LogicRole
         result_str = await chat_completion_with_retry(
             messages, temperature=0.1, max_tokens=512,
-            json_mode=False, use_breath_layer=True,
+            json_mode=False, use_breath_layer=True, role=LogicRole.REPORTER
         )
         assessment = parse_json_response(result_str)
     except Exception as e:

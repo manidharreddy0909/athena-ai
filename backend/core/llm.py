@@ -1,6 +1,7 @@
 """
-Athena AI — Provider-Agnostic LLM Client
+Athena AI — Provider-Agnostic LLM Client (Phase 3: Provider Abstraction)
 Implements a factory pattern to route traffic between Primary LLM and Breath AI Layer.
+Supports dynamic model selection via ModelRegistry.
 """
 import asyncio
 import json
@@ -10,6 +11,7 @@ from typing import Any, Dict, List, Optional
 from openai import AsyncOpenAI
 from core.config import settings
 from loguru import logger
+from enum import Enum
 
 
 class EmptyLLMResponse(Exception):
@@ -17,23 +19,15 @@ class EmptyLLMResponse(Exception):
 
 
 def parse_json_response(text: str) -> Any:
-    """
-    Parse a JSON string returned by an LLM, tolerating markdown code fences
-    and surrounding prose. LM Studio / local models often wrap JSON in
-    ```json ... ``` blocks or embed it in prose.
-    """
+    """Parse a JSON string returned by an LLM, tolerating markdown code fences."""
     if not text or not text.strip():
         raise EmptyLLMResponse("Empty LLM response — expected JSON")
-    # Strip markdown code fences if present
     fenced = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
     if fenced:
         text = fenced.group(1).strip()
-    # If the whole string is not valid JSON, try to extract the first
-    # balanced JSON object/array from surrounding prose.
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        # Find the first '{' or '[' and the matching last '}' or ']'
         start = min(
             [i for i in (text.find("{"), text.find("[")) if i != -1],
             default=-1,
@@ -45,46 +39,6 @@ def parse_json_response(text: str) -> Any:
         if end == -1 or end <= start:
             raise
         return json.loads(text[start : end + 1])
-
-
-async def chat_completion_with_retry(
-    messages: List[Dict[str, str]],
-    model: Optional[str] = None,
-    temperature: float = 0.7,
-    max_tokens: int = 2048,
-    json_mode: bool = False,
-    json_schema: Optional[Dict[str, Any]] = None,
-    use_breath_layer: bool = False,
-    max_retries: Optional[int] = None,
-) -> str:
-    """
-    Call chat_completion with retries on empty responses or transient errors.
-    Returns the raw text response. Raises the last error if all retries fail.
-    """
-    retries = max_retries if max_retries is not None else settings.LLM_MAX_RETRIES
-    last_error: Optional[Exception] = None
-    for attempt in range(retries + 1):
-        try:
-            result = await chat_completion(
-                messages=messages,
-                model=model,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                json_mode=json_mode,
-                json_schema=json_schema,
-                use_breath_layer=use_breath_layer,
-            )
-            if json_mode and (not result or not result.strip()):
-                raise EmptyLLMResponse("Empty LLM response — expected JSON")
-            return result
-        except Exception as e:  # noqa: BLE001 - retry on any provider/parse error
-            last_error = e
-            logger.warning(
-                f"LLM call attempt {attempt + 1}/{retries + 1} failed: {e}"
-            )
-            if attempt < retries:
-                await asyncio.sleep(settings.LLM_RETRY_DELAY_SECONDS)
-    raise last_error  # type: ignore[misc]
 
 
 class AIProvider(ABC):
@@ -105,7 +59,6 @@ class AIProvider(ABC):
 
 class OpenAICompatibleProvider(AIProvider):
     """Generic provider for OpenAI, OpenRouter, LM Studio, Groq, etc."""
-    
     def __init__(self, base_url: str, api_key: str, default_model: str):
         self.client = AsyncOpenAI(base_url=base_url, api_key=api_key)
         self.default_model = default_model
@@ -137,7 +90,6 @@ class OpenAICompatibleProvider(AIProvider):
 
         response = await self.client.chat.completions.create(**kwargs)
         content = response.choices[0].message.content
-        # Safety: some providers return None content with tool_calls when using json_schema
         if content is None:
             tc = response.choices[0].message.tool_calls
             if tc:
@@ -145,95 +97,115 @@ class OpenAICompatibleProvider(AIProvider):
         return content or ""
 
 
-class BreathAILayerProvider(AIProvider):
+class GeminiProvider(OpenAICompatibleProvider):
+    """Provider specifically for Google Gemini models."""
+    def __init__(self, api_key: str, default_model: str = "gemini-2.5-flash"):
+        super().__init__(
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            api_key=api_key,
+            default_model=default_model
+        )
+
+
+class ClaudeProvider(OpenAICompatibleProvider):
+    """Provider specifically for Anthropic Claude models (via OpenAI wrapper or direct)."""
+    def __init__(self, api_key: str, default_model: str = "claude-3-5-sonnet-20241022"):
+        super().__init__(
+            base_url="https://api.anthropic.com/v1/messages", # Simplified for now
+            api_key=api_key,
+            default_model=default_model
+        )
+
+
+class LocalProvider(OpenAICompatibleProvider):
+    """Provider specifically for local models (LM Studio/Ollama)."""
+    def __init__(self, base_url: str = "http://localhost:1234/v1", default_model: str = "gemma-4"):
+        super().__init__(
+            base_url=base_url,
+            api_key="local",
+            default_model=default_model
+        )
+
+
+class BreathAILayerProvider(OpenAICompatibleProvider):
     """Provider specifically for the Breath AI Layer Pro API."""
-    
-    def __init__(self, base_url: str, api_key: str):
-        self.client = AsyncOpenAI(base_url=base_url, api_key=api_key)
-        self.default_model = "breath-reasoning-v1"  # Hypothetical default
+    def __init__(self, api_key: str):
+        super().__init__(
+            base_url="https://api.breath.ai/v1",
+            api_key=api_key,
+            default_model="breath-reasoning-v1"
+        )
 
-    async def chat_completion(
-        self,
-        messages: List[Dict[str, str]],
-        model: Optional[str] = None,
-        temperature: float = 0.7,
-        max_tokens: int = 2048,
-        json_mode: bool = False,
-        json_schema: Optional[Dict[str, Any]] = None,
-    ) -> str:
-        # Breath AI Layer might have specialized parameters. Using standard for now.
-        kwargs = {
-            "model": model or self.default_model,
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
+
+# ─────────────────────────────────────────────
+# Model Registry (Role -> Provider/Model mapping)
+# ─────────────────────────────────────────────
+class LogicRole(str, Enum):
+    FAST = "FAST"
+    BALANCED = "BALANCED"
+    DEEP_REASONING = "DEEP_REASONING"
+    CODING = "CODING"
+    INTERVIEWER = "INTERVIEWER"
+    EVALUATOR = "EVALUATOR"
+    REPORTER = "REPORTER"
+    RESEARCH = "RESEARCH"
+
+
+class ModelRegistry:
+    """Maps logical roles to the appropriate provider and model based on configuration."""
+    
+    @classmethod
+    def get_provider_and_model(cls, role: LogicRole) -> tuple[AIProvider, str]:
+        # Under the strict 3-API key architecture, everything defaults to Gemini.
+        # This architecture can be extended dynamically.
+        gemini_provider = GeminiProvider(api_key=settings.GEMINI_API_KEY)
+        
+        # Role mappings
+        mapping = {
+            LogicRole.FAST: (gemini_provider, "gemini-2.5-flash-8b"),
+            LogicRole.BALANCED: (gemini_provider, "gemini-2.5-flash"),
+            LogicRole.DEEP_REASONING: (gemini_provider, "gemini-2.5-pro"),
+            LogicRole.CODING: (gemini_provider, "gemini-2.5-pro"),
+            LogicRole.INTERVIEWER: (gemini_provider, "gemini-2.5-flash"),
+            LogicRole.EVALUATOR: (gemini_provider, "gemini-2.5-flash"),
+            LogicRole.REPORTER: (gemini_provider, "gemini-2.5-pro"),
+            LogicRole.RESEARCH: (gemini_provider, "gemini-2.5-pro"),
         }
-        if json_mode and json_schema:
-            kwargs["response_format"] = {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "response_schema",
-                    "strict": True,
-                    "schema": json_schema,
-                },
-            }
-            
-        response = await self.client.chat.completions.create(**kwargs)
-        content = response.choices[0].message.content
-        if content is None:
-            tc = response.choices[0].message.tool_calls
-            if tc:
-                content = tc[0].function.arguments
-        return content or ""
+        return mapping.get(role, (gemini_provider, "gemini-2.5-flash"))
 
 
 class ProviderFactory:
     """Manages provider instantiation and fallback logic."""
     
-    _primary_provider: Optional[AIProvider] = None
     _breath_provider: Optional[AIProvider] = None
     _embedding_provider: Optional[AsyncOpenAI] = None
 
     @classmethod
     def get_primary(cls) -> AIProvider:
-        if not cls._primary_provider:
-            # Phase 2/3: Migrate to Gemini via OpenAI compatible endpoint or explicit GeminiProvider
-            cls._primary_provider = OpenAICompatibleProvider(
-                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-                api_key=settings.GEMINI_API_KEY,
-                default_model="gemini-2.5-flash",
-            )
-        return cls._primary_provider
+        # Defaults to the standard BALANCED role
+        provider, _ = ModelRegistry.get_provider_and_model(LogicRole.BALANCED)
+        return provider
 
     @classmethod
     def get_breath_layer(cls) -> AIProvider:
         """Returns Breath AI Layer if configured, otherwise falls back to Primary."""
         if settings.BREATH_API_KEY:
             if not cls._breath_provider:
-                cls._breath_provider = BreathAILayerProvider(
-                    base_url="https://api.breath.ai/v1",  # Hypothetical default endpoint
-                    api_key=settings.BREATH_API_KEY,
-                )
+                cls._breath_provider = BreathAILayerProvider(api_key=settings.BREATH_API_KEY)
             return cls._breath_provider
         
-        # Fallback to primary if Breath AI is not configured
         logger.debug("Breath AI Layer not configured. Falling back to Primary Provider.")
         return cls.get_primary()
 
     @classmethod
     def get_embedding_client(cls) -> AsyncOpenAI:
         if not cls._embedding_provider:
-            # We will use Gemini for embeddings if no dedicated embedding config
             cls._embedding_provider = AsyncOpenAI(
                 base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
                 api_key=settings.GEMINI_API_KEY,
             )
         return cls._embedding_provider
 
-
-# ─────────────────────────────────────────────
-# Convenience Wrappers for existing agents
-# ─────────────────────────────────────────────
 
 async def chat_completion(
     messages: List[Dict[str, str]],
@@ -243,16 +215,23 @@ async def chat_completion(
     json_mode: bool = False,
     json_schema: Optional[Dict[str, Any]] = None,
     use_breath_layer: bool = False,
+    role: Optional[LogicRole] = None,
 ) -> str:
     """Simple wrapper that routes to the appropriate provider."""
+    
     if use_breath_layer:
         provider = ProviderFactory.get_breath_layer()
+        active_model = model
     else:
-        provider = ProviderFactory.get_primary()
-        
+        if role:
+            provider, active_model = ModelRegistry.get_provider_and_model(role)
+        else:
+            provider = ProviderFactory.get_primary()
+            active_model = model
+            
     return await provider.chat_completion(
         messages=messages,
-        model=model,
+        model=active_model,
         temperature=temperature,
         max_tokens=max_tokens,
         json_mode=json_mode,
@@ -260,11 +239,48 @@ async def chat_completion(
     )
 
 
+async def chat_completion_with_retry(
+    messages: List[Dict[str, str]],
+    model: Optional[str] = None,
+    temperature: float = 0.7,
+    max_tokens: int = 2048,
+    json_mode: bool = False,
+    json_schema: Optional[Dict[str, Any]] = None,
+    use_breath_layer: bool = False,
+    max_retries: Optional[int] = None,
+    role: Optional[LogicRole] = None,
+) -> str:
+    """Call chat_completion with retries on empty responses or transient errors."""
+    retries = max_retries if max_retries is not None else settings.LLM_MAX_RETRIES
+    last_error: Optional[Exception] = None
+    for attempt in range(retries + 1):
+        try:
+            result = await chat_completion(
+                messages=messages,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                json_mode=json_mode,
+                json_schema=json_schema,
+                use_breath_layer=use_breath_layer,
+                role=role,
+            )
+            if json_mode and (not result or not result.strip()):
+                raise EmptyLLMResponse("Empty LLM response — expected JSON")
+            return result
+        except Exception as e:
+            last_error = e
+            logger.warning(f"LLM call attempt {attempt + 1}/{retries + 1} failed: {e}")
+            if attempt < retries:
+                await asyncio.sleep(settings.LLM_RETRY_DELAY_SECONDS)
+    raise last_error
+
+
 async def get_embedding(text: str) -> List[float]:
     """Get embedding vector for a text string."""
     client = ProviderFactory.get_embedding_client()
     response = await client.embeddings.create(
-        model="text-embedding-004",  # Gemini embedding model
+        model="text-embedding-004",
         input=text,
     )
     return response.data[0].embedding

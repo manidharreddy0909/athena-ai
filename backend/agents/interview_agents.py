@@ -2,7 +2,7 @@
 Athena AI — Question Generator Agent
 Generates questions based on topic, type, difficulty, and candidate context
 """
-from core.llm import chat_completion, chat_completion_with_retry, parse_json_response
+from core.llm import chat_completion, chat_completion_with_retry, parse_json_response, LogicRole
 from models.interview import QuestionType, DifficultyLevel, ReasoningTrace
 from loguru import logger
 
@@ -90,7 +90,7 @@ Generate exactly one interview question:""",
     ]
 
     try:
-        question = await chat_completion(messages, temperature=0.8, max_tokens=256)
+        question = await chat_completion(messages, temperature=0.8, max_tokens=256, role=LogicRole.INTERVIEWER)
         question = question.strip().strip('"').strip("'")
         logger.debug(f"📝 Generated {question_type.value} question on {topic}: {question[:80]}...")
         return question
@@ -133,7 +133,7 @@ Evaluate the answer. Respond with valid JSON only, no explanation:
 
     try:
         result_str = await chat_completion_with_retry(
-            messages, temperature=0.3, max_tokens=300, json_mode=False, use_breath_layer=True
+            messages, temperature=0.3, max_tokens=300, json_mode=False, use_breath_layer=True, role=LogicRole.EVALUATOR
         )
         result = parse_json_response(result_str)
         return {
@@ -194,7 +194,7 @@ Respond with valid JSON only:
 
     try:
         result_str = await chat_completion_with_retry(
-            messages, temperature=0.4, max_tokens=200, json_mode=False, use_breath_layer=True
+            messages, temperature=0.4, max_tokens=200, json_mode=False, use_breath_layer=True, role=LogicRole.DEEP_REASONING
         )
         result = parse_json_response(result_str)
         return {
