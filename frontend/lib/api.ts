@@ -6,6 +6,11 @@ export interface CandidateProfile {
   completed_missions: number[];
   skipped_topics: string[];
   learning_signals?: Record<string, number>;
+  domain?: string;
+  mode?: string;
+  language?: string;
+  resume_text?: string;
+  jd_text?: string;
 }
 
 export interface ReasoningTrace {
@@ -71,6 +76,12 @@ export interface FeedbackReport {
   learning_plan_30_day: string[];
   learning_plan_60_day: string[];
   learning_plan_90_day: string[];
+  
+  // Phase 11: Recruiter Intelligence
+  red_flags?: string[];
+  green_flags?: string[];
+  executive_summary?: string;
+  culture_fit_notes?: string;
 }
 
 export const api = {
@@ -98,6 +109,28 @@ export const api = {
     const res = await fetch(`${API_BASE}/api/v1/interview/${sessionId}/report`);
     if (!res.ok) throw new Error(`Report failed: ${res.statusText}`);
     return res.json();
+  },
+
+  // Voice API
+  async speechToText(audioBlob: Blob): Promise<{ text: string }> {
+    const formData = new FormData();
+    formData.append("file", audioBlob, "audio.webm");
+    const res = await fetch(`${API_BASE}/api/v1/voice/stt`, {
+      method: "POST",
+      body: formData,
+    });
+    if (!res.ok) throw new Error("STT failed");
+    return res.json();
+  },
+
+  async textToSpeech(text: string): Promise<Blob> {
+    const res = await fetch(`${API_BASE}/api/v1/voice/tts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    if (!res.ok) throw new Error("TTS failed");
+    return res.blob();
   },
 
   async getStatus(sessionId: string) {

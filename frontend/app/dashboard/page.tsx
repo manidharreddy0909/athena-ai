@@ -9,15 +9,15 @@ import {
 } from "recharts";
 import {
   Brain, TrendingUp, CheckCircle, XCircle, Download, Star,
-  Calendar, BarChart2, BookOpen, ArrowLeft,
+  Calendar, BarChart2, BookOpen, ArrowLeft, Flag, Info
 } from "lucide-react";
 import { api, FeedbackReport } from "@/lib/api";
 
 const HIRE_COLORS: Record<string, string> = {
-  strong_hire: "#10b981",
-  hire: "#06b6d4",
-  consider: "#f59e0b",
-  no_hire: "#ef4444",
+  strong_hire: "#10b981", // Emerald
+  hire: "#06b6d4",        // Cyan
+  consider: "#f59e0b",    // Amber
+  no_hire: "#ef4444",     // Red
 };
 
 const SCORE_COLOR = (score: number) =>
@@ -230,8 +230,60 @@ export default function DashboardPage() {
           </div>
         </motion.div>
 
-        {/* Main Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        {/* RECRUITER INTELLIGENCE */}
+        {report.executive_summary && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 }}
+            className="grid grid-cols-1 md:grid-cols-3 gap-6"
+          >
+            <div className="md:col-span-2 glass-panel p-6 border border-accent-secondary/30 bg-accent-secondary/5">
+              <h3 className="text-lg font-bold mb-3 flex items-center gap-2 text-accent-secondary">
+                <Info size={20} /> Executive Summary
+              </h3>
+              <p className="text-text-secondary leading-relaxed text-sm">
+                {report.executive_summary}
+              </p>
+              
+              {report.culture_fit_notes && (
+                <div className="mt-4 pt-4 border-t border-white/10">
+                  <h4 className="text-sm font-bold text-text-primary mb-2">Culture Fit Analysis</h4>
+                  <p className="text-text-secondary text-sm">{report.culture_fit_notes}</p>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-6">
+              {report.red_flags && report.red_flags.length > 0 && (
+                <div className="glass-panel p-5 border border-accent-danger/30 bg-accent-danger/5">
+                  <h4 className="text-sm font-bold text-accent-danger mb-3 flex items-center gap-2">
+                    <Flag size={16} /> Critical Red Flags
+                  </h4>
+                  <ul className="space-y-2 text-sm text-text-secondary">
+                    {report.red_flags.map((flag, i) => (
+                      <li key={i} className="flex gap-2"><XCircle size={14} className="text-accent-danger mt-0.5 shrink-0" /> <span>{flag}</span></li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {report.green_flags && report.green_flags.length > 0 && (
+                <div className="glass-panel p-5 border border-accent-success/30 bg-accent-success/5">
+                  <h4 className="text-sm font-bold text-accent-success mb-3 flex items-center gap-2">
+                    <Star size={16} /> Notable Strengths
+                  </h4>
+                  <ul className="space-y-2 text-sm text-text-secondary">
+                    {report.green_flags.map((flag, i) => (
+                      <li key={i} className="flex gap-2"><CheckCircle size={14} className="text-accent-success mt-0.5 shrink-0" /> <span>{flag}</span></li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           
           {/* Left: Radar Chart */}
           <motion.div
