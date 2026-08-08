@@ -197,21 +197,22 @@ class ProviderFactory:
     @classmethod
     def get_primary(cls) -> AIProvider:
         if not cls._primary_provider:
+            # Phase 2/3: Migrate to Gemini via OpenAI compatible endpoint or explicit GeminiProvider
             cls._primary_provider = OpenAICompatibleProvider(
-                base_url=settings.LLM_BASE_URL,
-                api_key=settings.LLM_API_KEY,
-                default_model=settings.LLM_MODEL,
+                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+                api_key=settings.GEMINI_API_KEY,
+                default_model="gemini-2.5-flash",
             )
         return cls._primary_provider
 
     @classmethod
     def get_breath_layer(cls) -> AIProvider:
         """Returns Breath AI Layer if configured, otherwise falls back to Primary."""
-        if settings.BREATH_AI_API_KEY and settings.BREATH_AI_BASE_URL:
+        if settings.BREATH_API_KEY:
             if not cls._breath_provider:
                 cls._breath_provider = BreathAILayerProvider(
-                    base_url=settings.BREATH_AI_BASE_URL,
-                    api_key=settings.BREATH_AI_API_KEY,
+                    base_url="https://api.breath.ai/v1",  # Hypothetical default endpoint
+                    api_key=settings.BREATH_API_KEY,
                 )
             return cls._breath_provider
         
@@ -222,9 +223,10 @@ class ProviderFactory:
     @classmethod
     def get_embedding_client(cls) -> AsyncOpenAI:
         if not cls._embedding_provider:
+            # We will use Gemini for embeddings if no dedicated embedding config
             cls._embedding_provider = AsyncOpenAI(
-                base_url=settings.EMBEDDING_BASE_URL,
-                api_key=settings.EMBEDDING_API_KEY,
+                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+                api_key=settings.GEMINI_API_KEY,
             )
         return cls._embedding_provider
 
@@ -262,7 +264,7 @@ async def get_embedding(text: str) -> List[float]:
     """Get embedding vector for a text string."""
     client = ProviderFactory.get_embedding_client()
     response = await client.embeddings.create(
-        model=settings.EMBEDDING_MODEL,
+        model="text-embedding-004",  # Gemini embedding model
         input=text,
     )
     return response.data[0].embedding

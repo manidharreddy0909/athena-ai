@@ -1,6 +1,5 @@
 """
 Athena AI — Application Settings
-Provider-agnostic: works with OpenRouter, LM Studio, Groq, OpenAI
 """
 from pydantic_settings import BaseSettings
 from typing import List
@@ -12,24 +11,12 @@ class Settings(BaseSettings):
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = True
 
-    # LLM (OpenAI-compatible — swap base_url to change provider)
-    LLM_BASE_URL: str = "http://localhost:1234/v1"
-    LLM_API_KEY: str = "lm-studio"
-    LLM_MODEL: str = "gemma-4"
-
+    # ----------------------------------------------------------
     # Core external providers required for full architecture
+    # ----------------------------------------------------------
     GEMINI_API_KEY: str = ""
     BREATH_API_KEY: str = ""
     VOICE_API_KEY: str = ""
-
-    # Legacy / Local fallback providers
-    BREATH_AI_BASE_URL: str = ""
-    BREATH_AI_API_KEY: str = ""
-
-    # Embeddings
-    EMBEDDING_BASE_URL: str = "http://localhost:1234/v1"
-    EMBEDDING_API_KEY: str = "lm-studio"
-    EMBEDDING_MODEL: str = "text-embedding-nomic-embed-text-v1.5"
 
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://athena:athena_secret@localhost:5432/athena_db"

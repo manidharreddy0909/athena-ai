@@ -15,7 +15,6 @@ from models.interview import StartInterviewRequest, RespondRequest
 
 # Use generic fast provider for tests
 from core.config import settings
-settings.LLM_MODEL = "gemma-4"
 
 async def test_end_to_end_flow():
     print("Starting End-to-End Interview Test...")

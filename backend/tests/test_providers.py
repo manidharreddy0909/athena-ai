@@ -18,15 +18,13 @@ async def test_providers():
     print("   Primary Provider loaded successfully ✓")
 
     # If Breath AI keys are missing, breath provider should fallback to primary
-    settings.BREATH_AI_API_KEY = ""
-    settings.BREATH_AI_BASE_URL = ""
+    settings.BREATH_API_KEY = ""
     breath_fallback = ProviderFactory.get_breath_layer()
     assert isinstance(breath_fallback, OpenAICompatibleProvider)
     print("   Breath AI correctly falls back to Primary when unconfigured ✓")
 
     # If configured, it should return the Breath AI provider
-    settings.BREATH_AI_API_KEY = "mock_key"
-    settings.BREATH_AI_BASE_URL = "http://mock.breath.ai"
+    settings.BREATH_API_KEY = "mock_key"
     # reset singleton
     ProviderFactory._breath_provider = None
     
