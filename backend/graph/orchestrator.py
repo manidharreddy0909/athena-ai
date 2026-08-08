@@ -90,9 +90,14 @@ async def node_generate_question(state: InterviewState) -> InterviewState:
     
     memory = _sessions[state.session_id]["memory"]
     
-    # Ensure a valid question type is set on state (defaults to theory for the first question)
+    # Ensure a valid question type is set on state (respects interview mode for the first question)
     if state.current_question_type is None:
-        state.current_question_type = QuestionType.THEORY
+        if state.mode == "coding":
+            state.current_question_type = QuestionType.CODING
+        elif state.mode == "system_design":
+            state.current_question_type = QuestionType.SYSTEM_DESIGN
+        else:
+            state.current_question_type = QuestionType.THEORY
     
     context = await memory.get_context_for_llm(current_topic=state.current_topic)
 
@@ -258,6 +263,7 @@ async def node_plan_next(state: InterviewState) -> InterviewState:
         questions_asked=state.questions_asked,
         min_questions=settings.MIN_QUESTIONS,
         min_days=settings.MIN_CURRICULUM_DAYS,
+        mode=state.mode,
     )
     
     next_topic = plan.get("next_topic", state.current_topic)
@@ -415,6 +421,7 @@ async def start_interview(request: StartInterviewRequest) -> StartInterviewRespo
         status=InterviewStatus.IN_PROGRESS,
         domain=request.domain or "ai_ml",
         language=request.language or "en",
+        mode=request.mode or "general",
     )
     
     # Pre-populate in-memory storage so nodes can register memory/graph engines

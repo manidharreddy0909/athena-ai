@@ -178,12 +178,19 @@ async def plan_next_question(
     questions_asked: int,
     min_questions: int = 8,
     min_days: int = 4,
+    mode: str = "general",
 ) -> dict:
     """
     Chief Interview Agent: decides next topic, type, and difficulty.
     Returns: {topic, question_type, difficulty, rationale}
     """
     days_needed = max(0, min_days - len(days_covered))
+
+    mode_instructions = ""
+    if mode == "coding":
+        mode_instructions = "CRITICAL RULE: This is a CODING interview. You MUST select question_type='coding' or 'debugging'. Pick a coding-heavy topic."
+    elif mode == "system_design":
+        mode_instructions = "CRITICAL RULE: This is a SYSTEM DESIGN interview. You MUST select question_type='system_design' or 'architecture'. Pick a system architecture topic."
 
     messages = [
         {
@@ -193,9 +200,10 @@ async def plan_next_question(
 State: asked={questions_asked}/{min_questions}, days={days_covered}, need_days={days_needed}, weak={weak_topics[:3]}, topic={topic}, correct_streak={consecutive_correct}, wrong_streak={consecutive_wrong}, recent={topics_covered[-3:] if topics_covered else []}.
 
 Rules: prioritize uncovered days if days_needed>0; lower difficulty if wrong_streak>=2; raise difficulty if correct_streak>=3; avoid recent topics.
+{mode_instructions}
 
 Respond with valid JSON only:
-{{"next_topic": "<topic>", "question_type": "<theory|coding|debugging|architecture>", "difficulty": <1-7>, "rationale": "<reason>"}}""",
+{{"next_topic": "<topic>", "question_type": "<theory|coding|debugging|architecture|system_design>", "difficulty": <1-7>, "rationale": "<reason>"}}""",
         },
     ]
 

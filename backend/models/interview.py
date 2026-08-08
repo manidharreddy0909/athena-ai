@@ -47,6 +47,12 @@ class HiringRecommendation(str, Enum):
     NO_HIRE = "no_hire"
 
 
+class InterviewMode(str, Enum):
+    GENERAL = "general"
+    CODING = "coding"
+    SYSTEM_DESIGN = "system_design"
+
+
 # ─────────────────────────────────────────────
 # Candidate Models
 # ─────────────────────────────────────────────
@@ -87,6 +93,7 @@ class StartInterviewRequest(BaseModel):
     learning_signals: Optional[Dict[str, float]] = None
     domain: Optional[str] = Field(default="ai_ml", description="Interview domain: ai_ml, software_engineering, data_engineering, cloud_devops, etc.")
     language: Optional[str] = Field(default="en", description="Interview language code: en, hi, te, es, fr, de, zh, ar, etc.")
+    mode: Optional[str] = Field(default="general", description="Interview mode: general, coding, system_design")
 
 
 class StartInterviewResponse(BaseModel):
@@ -200,6 +207,7 @@ class InterviewState(BaseModel):
     current_reasoning_trace: Optional[ReasoningTrace] = None
     domain: str = Field(default="ai_ml", description="Interview domain")
     language: str = Field(default="en", description="Interview language code")
+    mode: str = Field(default="general", description="Interview mode")
 
     # History
     qa_history: List[Dict[str, Any]] = Field(default_factory=list)
