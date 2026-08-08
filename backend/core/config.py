@@ -17,7 +17,12 @@ class Settings(BaseSettings):
     LLM_API_KEY: str = "lm-studio"
     LLM_MODEL: str = "gemma-4"
 
-    # Breath AI Layer (Pro features)
+    # Core external providers required for full architecture
+    GEMINI_API_KEY: str = ""
+    BREATH_API_KEY: str = ""
+    VOICE_API_KEY: str = ""
+
+    # Legacy / Local fallback providers
     BREATH_AI_BASE_URL: str = ""
     BREATH_AI_API_KEY: str = ""
 
