@@ -1,27 +1,37 @@
-# Athena AI: API Map
+# Athena AI API Map
 
 ## Base URL
-`http://localhost:8000/api/v1`
+`/api/v1`
 
-## Interview Flow Endpoints
+## Endpoints
 
-### 1. Start Interview
-- **Route**: `POST /interview/start`
-- **Description**: Initializes a new interview session and returns the first question.
-- **Request**: `{ "name": "string", "completed_missions": [int], "skipped_topics": [string] }`
-- **Response**: `session_id`, initial `question`, `topic`, `difficulty_level`.
+### 1. `POST /interview/start`
+- **Description**: Initiates a new interview session.
+- **Request Body**: `StartInterviewRequest`
+  - `name` (str): Candidate name.
+  - `completed_missions` (List[int]): Days completed in curriculum.
+  - `skipped_topics` (List[str]): Topics the candidate skipped.
+- **Response**: `StartInterviewResponse`
+  - `session_id`, `question`, `topic`, `difficulty_level`, `reasoning_trace`.
 
-### 2. Submit Answer
-- **Route**: `POST /interview/respond`
-- **Description**: Submits the candidate's answer for evaluation and returns the next question or completion signal.
-- **Request**: `{ "session_id": "string", "answer": "string" }`
-- **Response**: Evaluated `score`, `feedback`, next `question`, or `interview_complete: true`.
+### 2. `POST /interview/respond`
+- **Description**: Submits the candidate's answer and processes the next state.
+- **Request Body**: `RespondRequest`
+  - `session_id` (str): The active session.
+  - `answer` (str): Candidate's response.
+- **Response**: `RespondResponse`
+  - `question` (Next question), `answer_score`, `answer_feedback`, `interview_complete`, `reasoning_trace`.
 
-### 3. Fetch Report
-- **Route**: `GET /interview/{session_id}/report`
-- **Description**: Retrieves the finalized JSON feedback report for the recruiter dashboard.
-- **Response**: Aggregated scores, hiring recommendation, strong/weak areas, and learning plan.
+### 3. `GET /interview/{session_id}/report`
+- **Description**: Fetches the structured feedback report for a completed session.
+- **Response**: `FeedbackReport`
+  - Includes dimension scores, overall score, strong/weak areas, hiring recommendation, and knowledge graph snapshot.
 
-### 4. Fetch Status
-- **Route**: `GET /interview/{session_id}/status`
-- **Description**: Polls current state (questions asked, current topic, confidence score).
+### 4. `GET /interview/{session_id}/status`
+- **Description**: Gets the current interview status without generating a full report.
+- **Response**: Status JSON
+  - `status`, `questions_asked`, `topics_covered`, `confidence_score`, `is_complete`.
+
+## Internal Health
+### `GET /` & `/docs`
+- Root endpoint providing version and docs links. `/docs` provides Swagger UI.

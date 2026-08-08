@@ -1,32 +1,40 @@
-# Athena AI: Agent Map
+# Athena AI Agent Map
 
-## Orchestration (LangGraph)
-The core interview loop is a deterministic state machine powered by `langgraph`.
+## Core Agents
 
-## Specialized Agents
+Athena AI utilizes a multi-agent system decoupled from the main LangGraph state machine.
 
-### 1. `generate_question` (Question Agent)
-- **Role**: Takes the planned topic, difficulty, and type, and generates the exact wording of the interview question.
-- **Node Name**: `generate_question`
+### 1. Profile Analyzer (`node_profile_analysis`)
+- **Role**: Analyzes the initial candidate profile.
+- **Responsibilities**:
+  - Ingests `CandidateProfile` (completed days, skipped topics).
+  - Configures the initial `KnowledgeGraph`.
+  - Proposes the very first interview topic based on candidate weak spots or baseline requirements.
+  - Generates the initial `ReasoningTrace`.
 
-### 2. `evaluate_answer` (Evaluator Agent)
-- **Role**: Evaluates the candidate's answer against the active question. Computes a score (0.0 - 1.0) and generates concise feedback. Handles fallback routing if LLM parsing fails.
-- **Node Name**: `evaluate_answer`
+### 2. Question Agent (`generate_question`)
+- **Role**: Content Generator.
+- **Responsibilities**:
+  - Generates specific question text based on instructions from the Chief Planner.
+  - Adjusts tone and detail based on `DifficultyLevel` and `QuestionType`.
+  - Injects recent conversational context and past answers to ensure conversational fluidity.
 
-### 3. `plan_next` (Chief Planner Agent)
-- **Role**: Analyzes the candidate's history, weak spots, and current curriculum coverage to determine the *next* topic and optimal difficulty level.
-- **Node Name**: `plan_next`
+### 3. Evaluator Agent (`evaluate_answer`)
+- **Role**: Scoring and Feedback.
+- **Responsibilities**:
+  - Reviews candidate's answer against the prompt.
+  - Outputs a structured JSON assessment: `score` (0-1), `technical_accuracy`, `depth`, `clarity`, and concise `feedback`.
+  - Determines `key_gaps` and `strong_points`.
 
-### 4. `generate_report` (Feedback Agent)
-- **Role**: Summarizes the entire `qa_history` at the end of the interview. Determines final hiring recommendation and outputs actionable learning pathways.
+### 4. Chief Interview Agent / Planner (`plan_next_question`)
+- **Role**: Strategist.
+- **Responsibilities**:
+  - Observes the current state (questions asked, topics covered, mistake history).
+  - Decides the `next_topic`, `question_type`, and `difficulty` for the upcoming turn.
+  - Provides a `rationale` (ReasoningTrace) explaining *why* it chose this path (e.g., "Candidate failed DBMS last time, decreasing difficulty and probing normalization").
 
-## Graph Execution Flow
-```text
-START -> [profile_analysis] -> [generate_question] 
-                                    v (Wait for Answer)
-         [plan_next] <- [memory_update] <- [evaluate_answer]
-              |
-              +-> (Loop back to generate_question)
-              |
-         (Complete) -> [generate_report] -> END
-```
+### 5. Report Agent (`generate_report` in `feedback_agent.py`)
+- **Role**: Summarizer.
+- **Responsibilities**:
+  - Compiles the entire session history.
+  - Generates the `FeedbackReport` with dimension scores (communication, coding, architecture), hiring recommendations, and customized 30/60/90 day learning plans.

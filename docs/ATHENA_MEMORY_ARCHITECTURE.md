@@ -1,19 +1,26 @@
-# Athena AI: Memory Architecture
+# Athena AI Memory Architecture
 
-## Current State
-The system currently utilizes a two-tier memory architecture designed for **Session Resilience**:
+Athena AI employs a robust 4-layer persistent memory engine (`memory/memory_engine.py`) to manage context and intelligence.
 
-1. **In-Memory Volatile State**: The primary state of truth during an active interview loop. Stored in Python dictionaries keyed by `session_id`.
-2. **SQLite Persistence Layer**: A background fallback database (`backend/db/`) that asynchronously syncs the in-memory state. If a commit fails (e.g., due to Windows file locks / WinError 1225), the orchestrator catches the error and continues the interview using the volatile memory.
+## Layer 1: Short-Term Memory
+- **Implementation**: In-memory list (`ShortTermMemory`).
+- **Function**: Stores the last N Q&A pairs.
+- **Usage**: Prepended directly into LLM prompts as conversational context to maintain contextual continuity and enable follow-ups without blowing up the context window.
 
-## Planned Architecture: BREATH Persistent Memory Layer
-The master evolution plan dictates the implementation of the **BREATH API**.
+## Layer 2: Semantic Memory
+- **Implementation**: Qdrant Vector Store (Planned / Configured via `config.py`).
+- **Function**: Stores broad conceptual knowledge, past session data, or RAG documents.
+- **Usage**: Used to retrieve relevant grounded context when asking deep technical questions or checking if an answer aligns with standard documentation.
 
-### Memory Categories (Planned)
-- **Candidate Profile**: Extracted from resume/JD.
-- **Short-Term Memory**: The active `InterviewState` (questions, answers, real-time scores).
-- **Long-Term Consolidations**: Historical strengths, recurring mistakes across multiple interviews.
+## Layer 3: Interview Memory
+- **Implementation**: Structured state (tracked in `InterviewMemory`, persisted in PostgreSQL).
+- **Function**: Tracks explicit metadata: topics covered, curriculum days, counts of mistakes, and strong answers.
+- **Usage**: Helps the Chief Planner enforce rules like "cover at least 4 curriculum days" and "avoid repeating recently asked topics."
 
-### Memory Controls
-- Explicit commands to read, write, update, summarize, and expire candidate memories.
-- Memories will be tagged with a `confidence` level and `provenance` timestamp to ensure the model does not hallucinate long-term state.
+## Layer 4: Reasoning Memory
+- **Implementation**: JSON blobs/Trace logs (`ReasoningMemory`).
+- **Function**: Stores the internal debate logs, rationales, and "Why did I ask this?" explanations for every single question.
+- **Usage**: Feeds the Explainable AI UI panel for candidates, and provides deep insights for recruiter dashboards.
+
+## BREATH Integration (Phase 4)
+- **Goal**: Abstract `MemoryEngine` over the `BREATH` persistent memory API layer for cross-session long-term memory. This will allow Athena to remember candidate weaknesses across multiple interviews separated by months.
