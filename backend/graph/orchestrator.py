@@ -74,7 +74,7 @@ async def node_profile_analysis(state: InterviewState) -> InterviewState:
     
     # Store instances in global memory for this session
     _sessions[state.session_id]["graph"] = graph
-    _sessions[state.session_id]["memory"] = MemoryEngine()
+    _sessions[state.session_id]["memory"] = MemoryEngine(session_id=state.session_id)
     
     return state
 
@@ -89,11 +89,13 @@ async def node_generate_question(state: InterviewState) -> InterviewState:
     if state.current_question_type is None:
         state.current_question_type = QuestionType.THEORY
     
+    context = await memory.get_context_for_llm(current_topic=state.current_topic)
+    
     question = await generate_question(
         topic=state.current_topic or "AI Foundations",
         question_type=state.current_question_type,
         difficulty=state.current_difficulty,
-        context=memory.get_context_for_llm(),
+        context=context,
         last_answer=state.last_answer,
         candidate_name=state.candidate.name,
     )
@@ -148,7 +150,7 @@ async def node_memory_update(state: InterviewState) -> InterviewState:
         state.consecutive_correct = 0
         
     # Update Memory
-    memory.record_qa(
+    await memory.record_qa(
         question=state.current_question or "",
         answer=state.last_answer or "",
         topic=topic,
@@ -203,7 +205,7 @@ async def node_plan_next(state: InterviewState) -> InterviewState:
         confidence_score=0.5,
         consecutive_correct=state.consecutive_correct,
         consecutive_wrong=state.consecutive_wrong,
-        recent_context=memory.get_context_for_llm(),
+        recent_context=await memory.get_context_for_llm(current_topic=state.current_topic),
         questions_asked=state.questions_asked,
         min_questions=settings.MIN_QUESTIONS,
         min_days=settings.MIN_CURRICULUM_DAYS,
@@ -307,14 +309,13 @@ def restore_session_engines(state: InterviewState):
     for topic, confidence in state.topic_confidence.items():
         graph.update_confidence(topic, confidence)
         
-    memory = MemoryEngine()
+    memory = MemoryEngine(session_id=state.session_id)
+    # Re-hydrate short term memory only for active state tracking
     for qa in state.qa_history:
-        memory.record_qa(
+        memory.short_term.add(
             question=qa.get("question", ""),
             answer=qa.get("answer", ""),
             topic=qa.get("topic", "Unknown"),
-            curriculum_day=qa.get("curriculum_day"),
-            question_type=qa.get("question_type", "theory"),
             score=qa.get("score", 0.5),
         )
     _sessions[state.session_id] = {

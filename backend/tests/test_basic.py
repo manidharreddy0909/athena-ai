@@ -73,10 +73,10 @@ async def test_memory():
     print("\nTesting Memory Engine...")
     from memory.memory_engine import MemoryEngine
 
-    mem = MemoryEngine()
+    mem = MemoryEngine(session_id="test_session")
 
     # Add Q&A
-    mem.record_qa(
+    await mem.record_qa(
         question="What is RAG?",
         answer="Retrieval Augmented Generation...",
         topic="RAG",
@@ -89,7 +89,7 @@ async def test_memory():
     assert len(recent) == 1
     print(f"   Short-term memory: {len(recent)} entry OK")
 
-    context = mem.get_context_for_llm()
+    context = await mem.get_context_for_llm()
     assert "RAG" in context
     print("   LLM context: OK")
 
