@@ -171,6 +171,12 @@ class FeedbackReport(BaseModel):
     # Details
     strong_areas: List[str] = Field(default_factory=list)
     weak_areas: List[str] = Field(default_factory=list)
+    
+    # Phase 11: Recruiter Intelligence
+    red_flags: List[str] = Field(default_factory=list, description="Critical concerns for recruiters")
+    green_flags: List[str] = Field(default_factory=list, description="Strong positive signals")
+    culture_fit_notes: str = Field(default="", description="Behavioral and cultural assessment")
+    executive_summary: str = Field(default="", description="High-level summary for the hiring manager")
     topics_covered: List[str] = Field(default_factory=list)
     curriculum_days_covered: List[int] = Field(default_factory=list)
     total_questions: int = 0

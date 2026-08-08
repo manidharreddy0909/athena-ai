@@ -214,6 +214,12 @@ async def node_plan_next(state: InterviewState) -> InterviewState:
     """Decide if interview is over, or plan the next topic."""
     logger.info(f"[{state.session_id}] Executing NEXT_QUESTION planning")
     
+    # ── Hard ceiling: always respect MAX_QUESTIONS ───────────────────────────
+    if state.questions_asked >= settings.MAX_QUESTIONS:
+        state.status = InterviewStatus.COMPLETE
+        logger.info(f"[{state.session_id}] MAX_QUESTIONS ({settings.MAX_QUESTIONS}) reached — completing interview.")
+        return state
+
     # ── Phase 5: Socratic Follow-up Decision ─────────────────────────────
     last_score = state.last_answer_score or 0.5
     last_answer_text = state.last_answer or ""

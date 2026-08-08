@@ -149,6 +149,7 @@ class LogicRole(str, Enum):
     EVALUATOR = "EVALUATOR"
     REPORTER = "REPORTER"
     RESEARCH = "RESEARCH"
+    PROFILE_ANALYZER = "PROFILE_ANALYZER"
 
 
 class ModelRegistry:
@@ -170,6 +171,7 @@ class ModelRegistry:
             LogicRole.EVALUATOR: (gemini_provider, "gemini-2.5-flash"),
             LogicRole.REPORTER: (gemini_provider, "gemini-2.5-pro"),
             LogicRole.RESEARCH: (gemini_provider, "gemini-2.5-pro"),
+            LogicRole.PROFILE_ANALYZER: (gemini_provider, "gemini-2.5-flash"),
         }
         return mapping.get(role, (gemini_provider, "gemini-2.5-flash"))
 

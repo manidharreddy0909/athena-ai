@@ -219,4 +219,13 @@ Respond with valid JSON only:
         qa_transcript=state.qa_history,
     )
 
+    # Phase 11: Recruiter Intelligence — run in parallel after core report
+    from agents.recruiter_agent import generate_recruiter_intelligence
+    recruiter_data = await generate_recruiter_intelligence(state)
+    report.executive_summary = recruiter_data.get("executive_summary", "")
+    report.red_flags = recruiter_data.get("red_flags", [])
+    report.green_flags = recruiter_data.get("green_flags", [])
+    report.culture_fit_notes = recruiter_data.get("culture_fit_notes", "")
+
+    logger.info(f"✅ Full report with recruiter intelligence ready for {state.candidate.name}")
     return report
