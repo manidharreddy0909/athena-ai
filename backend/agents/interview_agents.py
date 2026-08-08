@@ -57,23 +57,30 @@ async def generate_question(
     context: str = "",
     last_answer: str = "",
     candidate_name: str = "the candidate",
+    language: str = "en",
 ) -> str:
     """Generate a single interview question using the LLM."""
+    from core.multilingual import MultilingualService
 
     type_prompt = QUESTION_PROMPTS.get(question_type, QUESTION_PROMPTS[QuestionType.THEORY])
     type_prompt = type_prompt.format(topic=topic)
     difficulty_mod = DIFFICULTY_MODIFIERS.get(difficulty, "")
 
+    base_system_prompt = (
+        "You are Athena, a senior technical interview specialist. "
+        "Generate ONE clear, specific interview question. "
+        "Do NOT include the answer. Do NOT explain the question. "
+        "Output ONLY the question text. "
+        "Make it conversational and professional."
+    )
+
+    # Phase 8: wrap with language instruction if not English
+    system_prompt = MultilingualService.build_language_system_prompt(language, base_system_prompt)
+
     messages = [
         {
             "role": "system",
-            "content": (
-                "You are Athena, a senior AI/ML interview specialist. "
-                "Generate ONE clear, specific interview question. "
-                "Do NOT include the answer. Do NOT explain the question. "
-                "Output ONLY the question text. "
-                "Make it conversational and professional."
-            ),
+            "content": system_prompt,
         },
         {
             "role": "user",
@@ -92,12 +99,12 @@ Generate exactly one interview question:""",
     try:
         question = await chat_completion(messages, temperature=0.8, max_tokens=256, role=LogicRole.INTERVIEWER)
         question = question.strip().strip('"').strip("'")
-        logger.debug(f"📝 Generated {question_type.value} question on {topic}: {question[:80]}...")
+        logger.debug(f"📝 Generated {question_type.value} question on {topic} [{language}]: {question[:80]}...")
         return question
     except Exception as e:
         logger.error(f"Question generation failed: {e}")
         # Fallback question
-        return f"Can you explain what {topic} is and how it works in a real AI system?"
+        return f"Can you explain what {topic} is and how it works in a real system?"
 
 
 async def evaluate_answer(

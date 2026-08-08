@@ -23,6 +23,7 @@ from agents.interview_agents import (
 )
 from agents.socratic_engine import should_follow_up, generate_socratic_followup, deep_evaluate_answer
 from agents.feedback_agent import generate_report
+from core.multilingual import MultilingualService
 from core.config import settings
 
 # In-memory storage for state objects
@@ -94,7 +95,8 @@ async def node_generate_question(state: InterviewState) -> InterviewState:
         state.current_question_type = QuestionType.THEORY
     
     context = await memory.get_context_for_llm(current_topic=state.current_topic)
-    
+
+    # Phase 8: Build language-aware system context
     question = await generate_question(
         topic=state.current_topic or "AI Foundations",
         question_type=state.current_question_type,
@@ -102,13 +104,14 @@ async def node_generate_question(state: InterviewState) -> InterviewState:
         context=context,
         last_answer=state.last_answer,
         candidate_name=state.candidate.name,
+        language=state.language,
     )
-    
+
     state.current_question = question
-    
+
     if state.questions_asked == 0:
-        state.questions_asked = 1 # Initial start
-        
+        state.questions_asked = 1  # Initial start
+
     return state
 
 
@@ -126,6 +129,7 @@ async def node_evaluate_answer(state: InterviewState) -> InterviewState:
         topic=state.current_topic or "",
         question_type=state.current_question_type or QuestionType.THEORY,
         difficulty=state.current_difficulty,
+        language=state.language,
     )
     
     state.last_answer_score = evaluation.get("score", 0.5)
@@ -207,6 +211,7 @@ async def node_plan_next(state: InterviewState) -> InterviewState:
             candidate_answer=last_answer_text,
             score=last_score,
             difficulty=state.current_difficulty,
+            language=state.language,
         )
         state.current_question = followup_q
         state.current_question_type = QuestionType.FOLLOW_UP
@@ -409,6 +414,7 @@ async def start_interview(request: StartInterviewRequest) -> StartInterviewRespo
         candidate=candidate,
         status=InterviewStatus.IN_PROGRESS,
         domain=request.domain or "ai_ml",
+        language=request.language or "en",
     )
     
     # Pre-populate in-memory storage so nodes can register memory/graph engines

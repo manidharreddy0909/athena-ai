@@ -86,6 +86,7 @@ class StartInterviewRequest(BaseModel):
     curriculum_json: Optional[Dict[str, Any]] = None
     learning_signals: Optional[Dict[str, float]] = None
     domain: Optional[str] = Field(default="ai_ml", description="Interview domain: ai_ml, software_engineering, data_engineering, cloud_devops, etc.")
+    language: Optional[str] = Field(default="en", description="Interview language code: en, hi, te, es, fr, de, zh, ar, etc.")
 
 
 class StartInterviewResponse(BaseModel):
@@ -198,6 +199,7 @@ class InterviewState(BaseModel):
     current_difficulty: DifficultyLevel = DifficultyLevel.EASY
     current_reasoning_trace: Optional[ReasoningTrace] = None
     domain: str = Field(default="ai_ml", description="Interview domain")
+    language: str = Field(default="en", description="Interview language code")
 
     # History
     qa_history: List[Dict[str, Any]] = Field(default_factory=list)

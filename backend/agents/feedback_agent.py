@@ -121,10 +121,9 @@ async def generate_report(state: InterviewState) -> FeedbackReport:
         for i, qa in enumerate(qa_history)
     ])
 
-    messages = [
-        {
-            "role": "user",
-            "content": f"""You are an interview assessment engine. Analyze this interview and return a JSON assessment.
+    from core.multilingual import MultilingualService
+
+    base_instruction = f"""You are an interview assessment engine. Analyze this interview and return a JSON assessment.
 
 Candidate: {state.candidate.name}
 Topics covered: {', '.join(state.topics_covered[:10])}
@@ -135,7 +134,14 @@ Total questions: {state.questions_asked}
 {qa_summary[:800]}
 
 Respond with valid JSON only:
-{{"overall_score": <int 0-100>, "technical_depth_score": <int 0-100>, "coding_score": <int 0-100>, "architecture_score": <int 0-100>, "communication_score": <int 0-100>, "reasoning_score": <int 0-100>, "hiring_recommendation": "hire"|"consider"|"no_hire", "hiring_confidence": "high"|"medium"|"low", "strong_areas": [<topics>], "weak_areas": [<topics>], "summary": "<2 sentence summary>"}}""",
+{{"overall_score": <int 0-100>, "technical_depth_score": <int 0-100>, "coding_score": <int 0-100>, "architecture_score": <int 0-100>, "communication_score": <int 0-100>, "reasoning_score": <int 0-100>, "hiring_recommendation": "hire"|"consider"|"no_hire", "hiring_confidence": "high"|"medium"|"low", "strong_areas": [<topics>], "weak_areas": [<topics>], "summary": "<2 sentence summary>"}}"""
+
+    final_instruction = MultilingualService.build_language_system_prompt(state.language, base_instruction)
+
+    messages = [
+        {
+            "role": "user",
+            "content": final_instruction,
         },
     ]
 

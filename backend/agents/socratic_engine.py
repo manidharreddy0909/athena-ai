@@ -52,21 +52,26 @@ async def generate_socratic_followup(
     candidate_answer: str,
     score: float,
     difficulty: DifficultyLevel,
+    language: str = "en",
 ) -> str:
     """
     Generate a targeted Socratic follow-up question based on the candidate's specific answer.
     This is NOT a generic follow-up — it explicitly references what the candidate said.
     """
+    from core.multilingual import MultilingualService
+
+    base_system_prompt = (
+        "You are Athena, a Socratic technical interviewer. Your job is to probe deeper "
+        "into a candidate's answer to expose gaps or test real understanding. "
+        "Do NOT repeat the original question. DO reference specific things the "
+        "candidate said. Ask exactly ONE probing follow-up question. "
+        "Output ONLY the question text — no preamble, no explanation."
+    )
+    system_prompt = MultilingualService.build_language_system_prompt(language, base_system_prompt)
     messages = [
         {
             "role": "system",
-            "content": (
-                "You are Athena, a Socratic AI interviewer. Your job is to probe deeper "
-                "into a candidate's answer to expose gaps or test real understanding. "
-                "Do NOT repeat the original question. DO reference specific things the "
-                "candidate said. Ask exactly ONE probing follow-up question. "
-                "Output ONLY the question text — no preamble, no explanation."
-            ),
+            "content": system_prompt,
         },
         {
             "role": "user",
@@ -105,17 +110,16 @@ async def deep_evaluate_answer(
     topic: str,
     question_type: QuestionType,
     difficulty: DifficultyLevel,
+    language: str = "en",
 ) -> dict:
     """
     Extended evaluation: returns score + structured feedback + dimensions + gaps.
     Used for Phase 5 rich feedback panel.
     """
+    from core.multilingual import MultilingualService
     truncated = answer[:700] if answer else "(no answer)"
 
-    messages = [
-        {
-            "role": "user",
-            "content": f"""You are an expert AI/ML interview evaluator. Evaluate this answer rigorously.
+    base_instruction = f"""You are an expert technical interview evaluator. Evaluate this answer rigorously.
 
 Topic: {topic}
 Question Type: {question_type.value}
@@ -134,7 +138,15 @@ Return valid JSON with this exact structure:
   "strong_points": ["<specific strength 1>", "<specific strength 2>"],
   "key_gaps": ["<specific gap 1>", "<specific gap 2>"],
   "follow_up_suggestion": "<one thing worth probing deeper if needed>"
-}}""",
+}}"""
+
+    # Wrap the instruction if the language is not English
+    final_instruction = MultilingualService.build_language_system_prompt(language, base_instruction)
+
+    messages = [
+        {
+            "role": "user",
+            "content": final_instruction,
         },
     ]
 
