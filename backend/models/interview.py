@@ -85,6 +85,7 @@ class StartInterviewRequest(BaseModel):
     skipped_topics: List[str] = Field(default_factory=list)
     curriculum_json: Optional[Dict[str, Any]] = None
     learning_signals: Optional[Dict[str, float]] = None
+    domain: Optional[str] = Field(default="ai_ml", description="Interview domain: ai_ml, software_engineering, data_engineering, cloud_devops, etc.")
 
 
 class StartInterviewResponse(BaseModel):
@@ -196,6 +197,7 @@ class InterviewState(BaseModel):
     current_curriculum_day: Optional[int] = None
     current_difficulty: DifficultyLevel = DifficultyLevel.EASY
     current_reasoning_trace: Optional[ReasoningTrace] = None
+    domain: str = Field(default="ai_ml", description="Interview domain")
 
     # History
     qa_history: List[Dict[str, Any]] = Field(default_factory=list)

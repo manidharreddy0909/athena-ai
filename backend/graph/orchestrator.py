@@ -16,6 +16,7 @@ from models.interview import (
     RespondRequest, RespondResponse, FeedbackReport
 )
 from knowledge.knowledge_graph import KnowledgeGraph
+from knowledge.domain_engine import DomainEngine, InterviewDomain
 from memory.memory_engine import MemoryEngine
 from agents.interview_agents import (
     generate_question, evaluate_answer, plan_next_question
@@ -32,29 +33,31 @@ _sessions: Dict[str, Dict[str, Any]] = {}
 # ─────────────────────────────────────────────
 
 async def node_profile_analysis(state: InterviewState) -> InterviewState:
-    """Analyze the candidate profile and select the initial topic."""
-    logger.info(f"[{state.session_id}] Executing PROFILE_ANALYSIS")
-    
+    """Analyze the candidate profile and select the initial topic using domain engine."""
+    logger.info(f"[{state.session_id}] Executing PROFILE_ANALYSIS (domain={state.domain})")
+
+    # Phase 6: Resolve domain engine
+    try:
+        domain_enum = InterviewDomain(state.domain or "ai_ml")
+    except ValueError:
+        logger.warning(f"Unknown domain '{state.domain}', falling back to ai_ml")
+        domain_enum = InterviewDomain.AI_ML
+
+    domain_engine = DomainEngine(domain_enum)
+    _sessions[state.session_id]["domain_engine"] = domain_engine
+
     # Pre-populate knowledge graph with candidate's learning signals
     graph = KnowledgeGraph()
     for topic, confidence in state.candidate.learning_signals.items():
         graph.update_confidence(topic, confidence)
-    
-    # Pick first topic based on skipped topics or core foundations
-    skipped = state.candidate.skipped_topics
-    all_nodes = list(graph.graph.nodes)
-    
-    first_topic = "Prompt Engineering"
-    for t in skipped:
-        if t in all_nodes:
-            first_topic = t
-            break
-            
+
+    # Pick first topic using domain engine
+    first_topic = domain_engine.get_initial_topic(state.candidate.skipped_topics)
     state.current_topic = first_topic
-    state.current_curriculum_day = graph.get_curriculum_day(first_topic)
-    
-    # Build initial Explainable AI reasoning trace from the actual profile decision
-    if first_topic in skipped:
+    state.current_curriculum_day = domain_engine.get_topic_day(first_topic) or graph.get_curriculum_day(first_topic)
+
+    # Build initial Explainable AI reasoning trace
+    if first_topic in state.candidate.skipped_topics:
         initial_explanation = (
             f"We're starting with {first_topic} because you marked it as skipped — "
             "let's verify your understanding of this topic."
@@ -65,18 +68,18 @@ async def node_profile_analysis(state: InterviewState) -> InterviewState:
             "to establish your baseline knowledge."
         )
     state.current_reasoning_trace = ReasoningTrace(
-        weak_node=first_topic if first_topic in skipped else None,
+        weak_node=first_topic if first_topic in state.candidate.skipped_topics else None,
         dependency_path=graph.get_dependency_path(first_topic),
         proposing_agent="profile_analyzer",
         chief_rationale="Initial topic selected from candidate profile and curriculum prerequisites.",
         human_explanation=initial_explanation,
         difficulty_rationale="Starting at moderate difficulty to gauge the candidate's baseline.",
     )
-    
+
     # Store instances in global memory for this session
     _sessions[state.session_id]["graph"] = graph
     _sessions[state.session_id]["memory"] = MemoryEngine(session_id=state.session_id)
-    
+
     return state
 
 
@@ -405,6 +408,7 @@ async def start_interview(request: StartInterviewRequest) -> StartInterviewRespo
         session_id=session_id,
         candidate=candidate,
         status=InterviewStatus.IN_PROGRESS,
+        domain=request.domain or "ai_ml",
     )
     
     # Pre-populate in-memory storage so nodes can register memory/graph engines
