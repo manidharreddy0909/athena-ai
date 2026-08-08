@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from loguru import logger
 
-from api.routes import interview, health
+from api.routes import interview, health, voice
 from core.config import settings
 from db.database import init_db
 
@@ -17,8 +17,9 @@ async def lifespan(app: FastAPI):
     logger.info("🦉 Athena AI starting up...")
     await init_db()
     logger.info("✅ Database initialized")
-    logger.info(f"🤖 LLM Provider: {settings.LLM_BASE_URL}")
-    logger.info(f"🗺️  Model: {settings.LLM_MODEL}")
+    logger.info(f"🤖 Gemini Provider: {'configured' if settings.GEMINI_API_KEY else 'NOT SET (set GEMINI_API_KEY)'}")
+    logger.info(f"🧠 BREATH Memory: {'configured' if settings.BREATH_API_KEY else 'mock mode (set BREATH_API_KEY)'}")
+    logger.info(f"🎙️ Voice: {'configured' if settings.VOICE_API_KEY else 'mock mode (set VOICE_API_KEY)'}")
     yield
     logger.info("🦉 Athena AI shutting down...")
 
@@ -44,6 +45,7 @@ app.add_middleware(
 # Routes
 app.include_router(health.router, tags=["Health"])
 app.include_router(interview.router, prefix="/api/v1", tags=["Interview"])
+app.include_router(voice.router, prefix="/api/v1", tags=["Voice"])
 
 
 @app.get("/")
