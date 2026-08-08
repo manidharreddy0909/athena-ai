@@ -18,7 +18,7 @@ from core.config import settings
 settings.LLM_MODEL = "gemma-4"
 
 async def test_end_to_end_flow():
-    print("🎬 Starting End-to-End Interview Test...")
+    print("Starting End-to-End Interview Test...")
 
     # 1. Start Interview
     req = StartInterviewRequest(
@@ -29,7 +29,7 @@ async def test_end_to_end_flow():
     
     start_res = await start_interview(req)
     session_id = start_res.session_id
-    print(f"✅ Session started: {session_id}")
+    print(f"   Session started: {session_id}")
     print(f"   Q1 [{start_res.topic} - Day {start_res.curriculum_day}]: {start_res.question}")
     
     # 2. Iterate through 8 questions
@@ -43,11 +43,11 @@ async def test_end_to_end_flow():
         
         status = await respond_to_question(ans)
         
-        print(f"   ✅ Answer {i} processed. Score: {status.answer_score}")
+        print(f"   Answer {i} processed. Score: {status.answer_score}")
         if not status.interview_complete:
             print(f"   Q{status.question_number} [{status.topic} - Day {status.curriculum_day}]: {status.question}")
         else:
-            print(f"   🏁 Interview complete at Q{status.question_number}")
+            print(f"   Interview complete at Q{status.question_number}")
             break
             
     # 3. Verify Constraints
@@ -56,7 +56,7 @@ async def test_end_to_end_flow():
     
     # 4. Get Report
     report = await get_report(session_id)
-    print("\n📊 Final Report Generated:")
+    print("\nFinal Report Generated:")
     print(f"   Overall Score: {report.overall_score}")
     print(f"   Recommendation: {report.hiring_recommendation}")
     print(f"   Total Questions: {report.total_questions}")
@@ -65,7 +65,7 @@ async def test_end_to_end_flow():
     assert report.total_questions >= 8, f"Expected 8 questions, got {report.total_questions}"
     assert len(report.curriculum_days_covered) >= 4, f"Expected >= 4 days, got {len(report.curriculum_days_covered)}"
     
-    print("\n🚀 ALL END-TO-END TESTS PASSED!")
+    print("\nALL END-TO-END TESTS PASSED!")
 
 if __name__ == "__main__":
     asyncio.run(test_end_to_end_flow())

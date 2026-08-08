@@ -11,6 +11,38 @@ from loguru import logger
 from datetime import datetime
 
 
+REPORT_JSON_SCHEMA = {
+    "name": "interview_assessment",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "overall_score": {"type": "integer"},
+            "technical_depth_score": {"type": "integer"},
+            "coding_score": {"type": "integer"},
+            "architecture_score": {"type": "integer"},
+            "communication_score": {"type": "integer"},
+            "reasoning_score": {"type": "integer"},
+            "hiring_recommendation": {
+                "type": "string",
+                "enum": ["strong_hire", "hire", "consider", "no_hire"],
+            },
+            "hiring_confidence": {"type": "string"},
+            "strong_areas": {"type": "array", "items": {"type": "string"}},
+            "weak_areas": {"type": "array", "items": {"type": "string"}},
+            "summary": {"type": "string"},
+        },
+        "required": [
+            "overall_score", "technical_depth_score", "coding_score",
+            "architecture_score", "communication_score", "reasoning_score",
+            "hiring_recommendation", "hiring_confidence",
+            "strong_areas", "weak_areas", "summary",
+        ],
+        "additionalProperties": False,
+    },
+}
+
+
 LEARNING_RESOURCES = {
     "RAG": {
         "docs": "LangChain RAG documentation",
@@ -91,41 +123,28 @@ async def generate_report(state: InterviewState) -> FeedbackReport:
 
     messages = [
         {
-            "role": "system",
-            "content": "You are Athena AI's evaluation engine. Generate a structured assessment of a technical interview. Return valid JSON.",
-        },
-        {
             "role": "user",
-            "content": f"""Candidate: {state.candidate.name}
-Topics covered: {state.topics_covered}
+            "content": f"""You are an interview assessment engine. Analyze this interview and return a JSON assessment.
+
+Candidate: {state.candidate.name}
+Topics covered: {', '.join(state.topics_covered[:10])}
 Curriculum days covered: {state.curriculum_days_covered}
 Average score: {avg_score:.2f}
 Total questions: {state.questions_asked}
 
-Q&A Summary:
-{qa_summary}
+{qa_summary[:800]}
 
-Topic confidence scores: {json.dumps(state.topic_confidence, indent=2)}
-
-Generate a comprehensive assessment as JSON:
-{{
-  "overall_score": <0-100>,
-  "technical_depth_score": <0-100>,
-  "coding_score": <0-100>,
-  "architecture_score": <0-100>,
-  "communication_score": <0-100>,
-  "reasoning_score": <0-100>,
-  "hiring_recommendation": "<strong_hire|hire|consider|no_hire>",
-  "hiring_confidence": "<high|medium|low>",
-  "strong_areas": ["<area1>", "<area2>"],
-  "weak_areas": ["<area1>", "<area2>"],
-  "summary": "<2-3 sentence executive summary>"
-}}""",
+Respond with valid JSON only:
+{{"overall_score": <int 0-100>, "technical_depth_score": <int 0-100>, "coding_score": <int 0-100>, "architecture_score": <int 0-100>, "communication_score": <int 0-100>, "reasoning_score": <int 0-100>, "hiring_recommendation": "hire"|"consider"|"no_hire", "hiring_confidence": "high"|"medium"|"low", "strong_areas": [<topics>], "weak_areas": [<topics>], "summary": "<2 sentence summary>"}}""",
         },
     ]
 
     try:
-        result_str = await chat_completion(messages, temperature=0.2, max_tokens=1024, json_mode=True, use_breath_layer=True)
+        from core.llm import chat_completion_with_retry
+        result_str = await chat_completion_with_retry(
+            messages, temperature=0.1, max_tokens=512,
+            json_mode=False, use_breath_layer=True,
+        )
         assessment = parse_json_response(result_str)
     except Exception as e:
         logger.error(f"Report generation LLM failed: {e}")

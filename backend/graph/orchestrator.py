@@ -299,9 +299,57 @@ app = workflow.compile()
 # Public API Methods
 # ─────────────────────────────────────────────
 
+def restore_session_engines(state: InterviewState):
+    """Reconstruct KnowledgeGraph and MemoryEngine from InterviewState to support service logic."""
+    graph = KnowledgeGraph()
+    for topic, confidence in state.candidate.learning_signals.items():
+        graph.update_confidence(topic, confidence)
+    for topic, confidence in state.topic_confidence.items():
+        graph.update_confidence(topic, confidence)
+        
+    memory = MemoryEngine()
+    for qa in state.qa_history:
+        memory.record_qa(
+            question=qa.get("question", ""),
+            answer=qa.get("answer", ""),
+            topic=qa.get("topic", "Unknown"),
+            curriculum_day=qa.get("curriculum_day"),
+            question_type=qa.get("question_type", "theory"),
+            score=qa.get("score", 0.5),
+        )
+    _sessions[state.session_id] = {
+        "state": state,
+        "graph": graph,
+        "memory": memory,
+    }
+
+
+async def get_or_load_session(session_id: str) -> InterviewState:
+    """Retrieve session from in-memory cache, or load from DB if cache miss."""
+    if session_id in _sessions:
+        return _sessions[session_id]["state"]
+        
+    try:
+        from db.database import AsyncSessionLocal, InterviewSession
+        from sqlalchemy import select
+        async with AsyncSessionLocal() as session:
+            stmt = select(InterviewSession).where(InterviewSession.session_id == session_id)
+            result = await session.execute(stmt)
+            db_sess = result.scalar_one_or_none()
+            if db_sess and db_sess.state_json:
+                state = InterviewState.model_validate(db_sess.state_json)
+                restore_session_engines(state)
+                return state
+    except Exception as e:
+        logger.warning(f"Database unavailable or failed to load session: {e}")
+        
+    raise ValueError(f"Session {session_id} not found")
+
+
 async def start_interview(request: StartInterviewRequest) -> StartInterviewResponse:
     """Initialize session and run Graph to generate first question."""
     session_id = f"sess_{uuid.uuid4().hex[:12]}"
+    logger.info(f"[{session_id}] Initializing new interview session.")
     
     candidate = CandidateProfile(
         candidate_id=request.candidate_id or f"cand_{uuid.uuid4().hex[:8]}",
@@ -317,34 +365,78 @@ async def start_interview(request: StartInterviewRequest) -> StartInterviewRespo
         status=InterviewStatus.IN_PROGRESS,
     )
     
+    # Pre-populate in-memory storage so nodes can register memory/graph engines
     _sessions[session_id] = {"state": state}
     
-    # Run the init subgraph (Profile Analysis -> Generate Question)
-    # LangGraph returns a dict-like AddableValuesDict; reconstruct the Pydantic state.
-    final_state = InterviewState(**await app.ainvoke(state))
-    _sessions[session_id]["state"] = final_state
-    
-    return StartInterviewResponse(
-        session_id=session_id,
-        candidate_id=candidate.candidate_id,
-        status=InterviewStatus.IN_PROGRESS,
-        question_number=1,
-        question=final_state.current_question,
-        question_type=final_state.current_question_type,
-        topic=final_state.current_topic,
-        curriculum_day=final_state.current_curriculum_day,
-        difficulty_level=final_state.current_difficulty,
-        reasoning_trace=final_state.current_reasoning_trace,
-        total_questions_planned=settings.MIN_QUESTIONS,
-    )
+    try:
+        # Run graph execution (INIT -> PROFILE_ANALYSIS -> QUESTION)
+        final_state = InterviewState(**await app.ainvoke(state))
+        _sessions[session_id]["state"] = final_state
+        
+        # Persist session to database (within a transactional block)
+        try:
+            from db.database import AsyncSessionLocal, InterviewSession, QuestionRecord
+            async with AsyncSessionLocal() as session:
+                async with session.begin():
+                    # Create interview session entry
+                    db_session = InterviewSession(
+                        session_id=session_id,
+                        candidate_id=candidate.candidate_id,
+                        candidate_name=candidate.name,
+                        status="in_progress",
+                        state_json=final_state.model_dump(),
+                        total_questions=1,
+                    )
+                    session.add(db_session)
+                    
+                    # Create first question record
+                    db_question = QuestionRecord(
+                        session_id=session_id,
+                        question_number=1,
+                        question_text=final_state.current_question or "",
+                        question_type=final_state.current_question_type.value if final_state.current_question_type else "theory",
+                        topic=final_state.current_topic or "",
+                        curriculum_day=final_state.current_curriculum_day,
+                        difficulty_level=final_state.current_difficulty.value if final_state.current_difficulty else 1,
+                    )
+                    session.add(db_question)
+            logger.info(f"[{session_id}] Session persisted to database successfully.")
+        except Exception as db_err:
+            logger.warning(f"Database persistence skipped/failed: {db_err}")
+            
+        return StartInterviewResponse(
+            session_id=session_id,
+            candidate_id=candidate.candidate_id,
+            status=InterviewStatus.IN_PROGRESS,
+            question_number=1,
+            question=final_state.current_question or "",
+            question_type=final_state.current_question_type or QuestionType.THEORY,
+            topic=final_state.current_topic or "",
+            curriculum_day=final_state.current_curriculum_day,
+            difficulty_level=final_state.current_difficulty,
+            reasoning_trace=final_state.current_reasoning_trace or ReasoningTrace(human_explanation="Session initialized."),
+            total_questions_planned=settings.MIN_QUESTIONS,
+        )
+        
+    except Exception as e:
+        logger.error(f"[{session_id}] Failed to start interview session: {e}")
+        if session_id in _sessions:
+            del _sessions[session_id]
+        raise RuntimeError(f"Could not initialize interview session: {str(e)}")
 
 
 async def respond_to_question(request: RespondRequest) -> RespondResponse:
     """Process candidate answer through the LangGraph execution loop."""
-    if request.session_id not in _sessions:
-        raise ValueError("Session not found")
-        
-    state = _sessions[request.session_id]["state"]
+    state = await get_or_load_session(request.session_id)
+    
+    # Store information about the question currently being answered
+    answered_q_num = state.questions_asked
+    answered_q_text = state.current_question or ""
+    answered_q_type = state.current_question_type
+    answered_topic = state.current_topic or ""
+    answered_day = state.current_curriculum_day
+    answered_diff = state.current_difficulty
+    
     state.last_answer = request.answer
     
     # We dynamically build the response execution graph so we can ainvoke it
@@ -367,10 +459,67 @@ async def respond_to_question(request: RespondRequest) -> RespondResponse:
     resp_app = resp_workflow.compile()
     
     # Execute the response chain
-    # LangGraph returns a dict-like AddableValuesDict; reconstruct the Pydantic state.
     final_state = InterviewState(**await resp_app.ainvoke(state))
     _sessions[request.session_id]["state"] = final_state
     
+    # Sync update to database
+    try:
+        from db.database import AsyncSessionLocal, InterviewSession, QuestionRecord
+        from sqlalchemy import select, update
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                # 1. Update the answered question record with response details
+                stmt = select(QuestionRecord).where(
+                    QuestionRecord.session_id == request.session_id,
+                    QuestionRecord.question_number == answered_q_num
+                )
+                res = await session.execute(stmt)
+                db_question = res.scalar_one_or_none()
+                if db_question:
+                    db_question.answer_text = request.answer
+                    db_question.answer_score = final_state.last_answer_score
+                else:
+                    # Fallback create if missing
+                    db_question = QuestionRecord(
+                        session_id=request.session_id,
+                        question_number=answered_q_num,
+                        question_text=answered_q_text,
+                        question_type=answered_q_type.value if answered_q_type else "theory",
+                        topic=answered_topic,
+                        curriculum_day=answered_day,
+                        difficulty_level=answered_diff.value if answered_diff else 1,
+                        answer_text=request.answer,
+                        answer_score=final_state.last_answer_score,
+                    )
+                    session.add(db_question)
+                
+                # 2. If new question is generated and interview is not complete, insert it
+                if final_state.status != InterviewStatus.COMPLETE:
+                    db_next_question = QuestionRecord(
+                        session_id=request.session_id,
+                        question_number=final_state.questions_asked,
+                        question_text=final_state.current_question or "",
+                        question_type=final_state.current_question_type.value if final_state.current_question_type else "theory",
+                        topic=final_state.current_topic or "",
+                        curriculum_day=final_state.current_curriculum_day,
+                        difficulty_level=final_state.current_difficulty.value if final_state.current_difficulty else 1,
+                    )
+                    session.add(db_next_question)
+                
+                # 3. Update interview session
+                stmt_sess = select(InterviewSession).where(InterviewSession.session_id == request.session_id)
+                res_sess = await session.execute(stmt_sess)
+                db_sess = res_sess.scalar_one_or_none()
+                if db_sess:
+                    db_sess.status = final_state.status.value
+                    db_sess.state_json = final_state.model_dump()
+                    db_sess.total_questions = final_state.questions_asked
+                    if final_state.status == InterviewStatus.COMPLETE:
+                        import datetime
+                        db_sess.completed_at = datetime.datetime.utcnow()
+    except Exception as db_err:
+        logger.warning(f"Database response sync skipped/failed: {db_err}")
+        
     return RespondResponse(
         session_id=request.session_id,
         question_number=final_state.questions_asked,
@@ -389,9 +538,24 @@ async def respond_to_question(request: RespondRequest) -> RespondResponse:
 
 
 async def get_report(session_id: str) -> FeedbackReport:
-    """Generate final report."""
-    if session_id not in _sessions:
-        raise ValueError("Session not found")
+    """Generate final report and persist to database."""
+    state = await get_or_load_session(session_id)
+    report = await generate_report(state)
+    
+    # Save report to DB
+    try:
+        from db.database import AsyncSessionLocal, InterviewSession
+        from sqlalchemy import select
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                stmt = select(InterviewSession).where(InterviewSession.session_id == session_id)
+                res = await session.execute(stmt)
+                db_sess = res.scalar_one_or_none()
+                if db_sess:
+                    db_sess.report_json = report.model_dump()
+                    db_sess.overall_score = report.overall_score
+    except Exception as db_err:
+        logger.warning(f"Database report sync skipped/failed: {db_err}")
         
-    state = _sessions[session_id]["state"]
-    return await generate_report(state)
+    return report
+

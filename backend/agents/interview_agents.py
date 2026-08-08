@@ -28,6 +28,27 @@ DIFFICULTY_MODIFIERS = {
     DifficultyLevel.PRODUCTION_SCALE: "This is a production-scale challenge. The candidate should think like a senior engineer debugging a live system.",
 }
 
+# Minimal schema - matches what Gemma 4 / LM Studio can reliably produce
+EVALUATION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "score": {"type": "number"},
+        "feedback": {"type": "string"},
+    },
+    "required": ["score", "feedback"],
+}
+
+PLANNING_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "next_topic": {"type": "string"},
+        "question_type": {"type": "string"},
+        "difficulty": {"type": "integer"},
+        "rationale": {"type": "string"},
+    },
+    "required": ["next_topic", "question_type", "difficulty", "rationale"],
+}
+
 
 async def generate_question(
     topic: str,
@@ -96,41 +117,34 @@ async def evaluate_answer(
 
     messages = [
         {
-            "role": "system",
-            "content": (
-                "You are Athena, an expert AI interview evaluator. "
-                "Evaluate the candidate's answer and return a JSON object. "
-                "Be fair but rigorous. Consider technical accuracy, depth, and clarity."
-            ),
-        },
-        {
             "role": "user",
-            "content": f"""Question: {question}
+            "content": f"""You are an expert AI interview evaluator.
+
+Question: {question[:200]}
 Topic: {topic}
 Type: {question_type.value}
-Difficulty Level: {difficulty.value}/7
-
+Difficulty: {difficulty.value}/7
 Candidate's Answer: {truncated_answer}
 
-Evaluate and return JSON with this exact structure:
-{{
-  "score": <float 0.0-1.0>,
-  "technical_accuracy": <float 0.0-1.0>,
-  "depth": <float 0.0-1.0>,
-  "clarity": <float 0.0-1.0>,
-  "feedback": "<2-3 sentence constructive feedback>",
-  "key_gaps": ["<gap1>", "<gap2>"],
-  "strong_points": ["<point1>"]
-}}""",
+Evaluate the answer. Respond with valid JSON only, no explanation:
+{{"score": <float 0.0-1.0>, "feedback": "<2 sentence assessment>"}}""",
         },
     ]
 
     try:
         result_str = await chat_completion_with_retry(
-            messages, temperature=0.3, max_tokens=512, json_mode=True, use_breath_layer=True
+            messages, temperature=0.3, max_tokens=300, json_mode=False, use_breath_layer=True
         )
         result = parse_json_response(result_str)
-        return result
+        return {
+            "score": float(result.get("score", 0.5)),
+            "technical_accuracy": float(result.get("technical_accuracy", result.get("score", 0.5))),
+            "depth": float(result.get("depth", result.get("score", 0.5))),
+            "clarity": float(result.get("clarity", result.get("score", 0.5))),
+            "feedback": str(result.get("feedback", "Answer recorded.")),
+            "key_gaps": result.get("key_gaps", []),
+            "strong_points": result.get("strong_points", []),
+        }
     except Exception as e:
         logger.error(f"Evaluation failed after retries: {e}")
         # Controlled fallback — clearly not an LLM decision.
@@ -166,52 +180,30 @@ async def plan_next_question(
 
     messages = [
         {
-            "role": "system",
-            "content": (
-                "You are the Chief Interview Agent for Athena AI. "
-                "You must decide what to ask next based on the candidate's performance. "
-                "Return a JSON object with your decision."
-            ),
-        },
-        {
             "role": "user",
-            "content": f"""Interview state:
-- Questions asked: {questions_asked}
-- Minimum required: {min_questions}
-- Topics covered: {topics_covered}
-- Curriculum days covered: {days_covered}
-- Days still needed: {days_needed}
-- Weak topics: {weak_topics[:5]}
-- Current topic: {topic}
-- Confidence score: {confidence_score:.2f}
-- Consecutive correct: {consecutive_correct}
-- Consecutive wrong: {consecutive_wrong}
-- Recent context: {recent_context[:300]}
+            "content": f"""You are the Chief Interview Agent. Decide the next interview question.
 
-Rules:
-1. If days_needed > 0, prioritize topics from uncovered days
-2. If confidence < 0.4, drop difficulty and revisit fundamentals
-3. If consecutive_correct >= 3, increase difficulty
-4. If consecutive_wrong >= 2, decrease difficulty or change topic
-5. Never repeat recently covered topics unless doing follow-up
+State: asked={questions_asked}/{min_questions}, days={days_covered}, need_days={days_needed}, weak={weak_topics[:3]}, topic={topic}, correct_streak={consecutive_correct}, wrong_streak={consecutive_wrong}, recent={topics_covered[-3:] if topics_covered else []}.
 
-Return JSON:
-{{
-  "next_topic": "<topic from the curriculum>",
-  "question_type": "<theory|coding|debugging|architecture|system_design|optimization|edge_case|follow_up>",
-  "difficulty": <1-7>,
-  "rationale": "<why this decision>",
-  "human_explanation": "<short explanation for the candidate-facing UI>"
-}}""",
+Rules: prioritize uncovered days if days_needed>0; lower difficulty if wrong_streak>=2; raise difficulty if correct_streak>=3; avoid recent topics.
+
+Respond with valid JSON only:
+{{"next_topic": "<topic>", "question_type": "<theory|coding|debugging|architecture>", "difficulty": <1-7>, "rationale": "<reason>"}}""",
         },
     ]
 
     try:
         result_str = await chat_completion_with_retry(
-            messages, temperature=0.4, max_tokens=512, json_mode=True, use_breath_layer=True
+            messages, temperature=0.4, max_tokens=200, json_mode=False, use_breath_layer=True
         )
         result = parse_json_response(result_str)
-        return result
+        return {
+            "next_topic": str(result.get("next_topic", topic)),
+            "question_type": str(result.get("question_type", "theory")),
+            "difficulty": int(result.get("difficulty", 2)),
+            "rationale": str(result.get("rationale", "")),
+            "human_explanation": str(result.get("human_explanation", "")),
+        }
     except Exception as e:
         logger.error(f"Planning failed after retries: {e}")
         # Controlled fallback — clearly not an LLM decision.

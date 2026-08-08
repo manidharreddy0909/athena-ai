@@ -19,8 +19,9 @@ export default function Home() {
     setLoading(true);
     try {
       const res = await api.startInterview(profile);
-      // Store session in localStorage for demo purposes
+      // Store session ID and full session data (including first question) for interview page
       localStorage.setItem("athena_session_id", res.session_id);
+      localStorage.setItem("athena_session_data", JSON.stringify(res));
       router.push("/interview");
     } catch (err) {
       console.error(err);

@@ -53,6 +53,7 @@ async def chat_completion_with_retry(
     temperature: float = 0.7,
     max_tokens: int = 2048,
     json_mode: bool = False,
+    json_schema: Optional[Dict[str, Any]] = None,
     use_breath_layer: bool = False,
     max_retries: Optional[int] = None,
 ) -> str:
@@ -70,6 +71,7 @@ async def chat_completion_with_retry(
                 temperature=temperature,
                 max_tokens=max_tokens,
                 json_mode=json_mode,
+                json_schema=json_schema,
                 use_breath_layer=use_breath_layer,
             )
             if json_mode and (not result or not result.strip()):
@@ -96,6 +98,7 @@ class AIProvider(ABC):
         temperature: float = 0.7,
         max_tokens: int = 2048,
         json_mode: bool = False,
+        json_schema: Optional[Dict[str, Any]] = None,
     ) -> str:
         pass
 
@@ -114,6 +117,7 @@ class OpenAICompatibleProvider(AIProvider):
         temperature: float = 0.7,
         max_tokens: int = 2048,
         json_mode: bool = False,
+        json_schema: Optional[Dict[str, Any]] = None,
     ) -> str:
         kwargs = {
             "model": model or self.default_model,
@@ -121,13 +125,24 @@ class OpenAICompatibleProvider(AIProvider):
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
-        # NOTE: json_mode does NOT set response_format. LM Studio rejects
-        # "json_object" and returns empty content for "text". The prompts
-        # already instruct the model to return strict JSON, so we omit
-        # response_format entirely for maximum provider compatibility.
+        if json_mode and json_schema:
+            kwargs["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "response_schema",
+                    "strict": True,
+                    "schema": json_schema,
+                },
+            }
 
         response = await self.client.chat.completions.create(**kwargs)
-        return response.choices[0].message.content
+        content = response.choices[0].message.content
+        # Safety: some providers return None content with tool_calls when using json_schema
+        if content is None:
+            tc = response.choices[0].message.tool_calls
+            if tc:
+                content = tc[0].function.arguments
+        return content or ""
 
 
 class BreathAILayerProvider(AIProvider):
@@ -144,6 +159,7 @@ class BreathAILayerProvider(AIProvider):
         temperature: float = 0.7,
         max_tokens: int = 2048,
         json_mode: bool = False,
+        json_schema: Optional[Dict[str, Any]] = None,
     ) -> str:
         # Breath AI Layer might have specialized parameters. Using standard for now.
         kwargs = {
@@ -152,11 +168,23 @@ class BreathAILayerProvider(AIProvider):
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
-        # Same compatibility fix as OpenAICompatibleProvider: omit
-        # response_format entirely so LM Studio returns content.
+        if json_mode and json_schema:
+            kwargs["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "response_schema",
+                    "strict": True,
+                    "schema": json_schema,
+                },
+            }
             
         response = await self.client.chat.completions.create(**kwargs)
-        return response.choices[0].message.content
+        content = response.choices[0].message.content
+        if content is None:
+            tc = response.choices[0].message.tool_calls
+            if tc:
+                content = tc[0].function.arguments
+        return content or ""
 
 
 class ProviderFactory:
@@ -211,6 +239,7 @@ async def chat_completion(
     temperature: float = 0.7,
     max_tokens: int = 2048,
     json_mode: bool = False,
+    json_schema: Optional[Dict[str, Any]] = None,
     use_breath_layer: bool = False,
 ) -> str:
     """Simple wrapper that routes to the appropriate provider."""
@@ -225,6 +254,7 @@ async def chat_completion(
         temperature=temperature,
         max_tokens=max_tokens,
         json_mode=json_mode,
+        json_schema=json_schema,
     )
 
 

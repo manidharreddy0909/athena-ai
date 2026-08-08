@@ -15,7 +15,7 @@ from models.interview import (
 
 async def test_models():
     """Test that Pydantic models serialize correctly."""
-    print("✅ Testing Pydantic models...")
+    print("Testing Pydantic models...")
 
     req = StartInterviewRequest(
         name="Test Candidate",
@@ -25,53 +25,52 @@ async def test_models():
     )
     assert req.name == "Test Candidate"
     assert req.completed_missions == [1, 2, 3]
-    print(f"   StartInterviewRequest: {req.name} ✓")
+    print(f"   StartInterviewRequest: {req.name} OK")
 
     respond = RespondRequest(
         session_id="sess_test123",
         answer="RAG works by retrieving relevant chunks from a vector database.",
     )
     assert respond.session_id == "sess_test123"
-    print(f"   RespondRequest: {respond.session_id} ✓")
-
-    print("✅ All model tests passed!")
+    print(f"   RespondRequest: {respond.session_id} OK")
+    print("All model tests passed!")
 
 
 async def test_knowledge_graph():
     """Test the knowledge graph."""
-    print("\n✅ Testing Knowledge Graph...")
+    print("\nTesting Knowledge Graph...")
     from knowledge.knowledge_graph import KnowledgeGraph
 
     graph = KnowledgeGraph()
-    print(f"   Nodes: {graph.graph.number_of_nodes()} ✓")
-    print(f"   Edges: {graph.graph.number_of_edges()} ✓")
+    print(f"   Nodes: {graph.graph.number_of_nodes()} OK")
+    print(f"   Edges: {graph.graph.number_of_edges()} OK")
 
     # Test confidence update
     graph.update_confidence("RAG", 0.8)
     assert graph.graph.nodes["RAG"]["confidence"] > 0.5
-    print("   Confidence update: ✓")
+    print("   Confidence update: OK")
 
     # Test weakest node
     weakest = graph.get_weakest_untested_node([])
     assert weakest is not None
-    print(f"   Weakest untested node: {weakest} ✓")
+    print(f"   Weakest untested node: {weakest} OK")
 
     # Test scores
     scores = graph.get_all_scores()
     assert len(scores) > 0
-    print(f"   All scores: {len(scores)} topics ✓")
+    print(f"   All scores: {len(scores)} topics OK")
 
     # Test serialization
     data = graph.to_dict()
     assert "nodes" in data and "edges" in data
-    print("   Serialization: ✓")
+    print("   Serialization: OK")
 
-    print("✅ Knowledge Graph tests passed!")
+    print("Knowledge Graph tests passed!")
 
 
 async def test_memory():
     """Test the memory engine."""
-    print("\n✅ Testing Memory Engine...")
+    print("\nTesting Memory Engine...")
     from memory.memory_engine import MemoryEngine
 
     mem = MemoryEngine()
@@ -88,23 +87,23 @@ async def test_memory():
 
     recent = mem.short_term.get_recent(3)
     assert len(recent) == 1
-    print(f"   Short-term memory: {len(recent)} entry ✓")
+    print(f"   Short-term memory: {len(recent)} entry OK")
 
     context = mem.get_context_for_llm()
     assert "RAG" in context
-    print("   LLM context: ✓")
+    print("   LLM context: OK")
 
     summary = mem.interview.get_summary()
     assert "RAG" in summary["topics_covered"]
     assert 3 in summary["days_covered"]
-    print(f"   Interview memory: {summary} ✓")
+    print(f"   Interview memory: {summary} OK")
 
-    print("✅ Memory Engine tests passed!")
+    print("Memory Engine tests passed!")
 
 
 async def main():
     print("=" * 50)
-    print("🦉 Athena AI — Backend Unit Tests")
+    print("Athena AI - Backend Unit Tests")
     print("=" * 50)
 
     await test_models()
@@ -112,7 +111,7 @@ async def main():
     await test_memory()
 
     print("\n" + "=" * 50)
-    print("✅ All tests passed! Backend is healthy.")
+    print("All tests passed! Backend is healthy.")
     print("=" * 50)
 
 

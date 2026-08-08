@@ -28,7 +28,10 @@ async def start_interview_endpoint(request: StartInterviewRequest):
         return response
     except Exception as e:
         logger.error(f"Failed to start interview: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Could not initialize interview session: {str(e)}"
+        )
 
 
 @router.post("/interview/respond", response_model=RespondResponse)
