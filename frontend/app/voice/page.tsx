@@ -20,35 +20,7 @@ export default function VoiceInterviewPage() {
   const audioChunksRef = useRef<Blob[]>([]);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
-  // Initialize session
-  useEffect(() => {
-    const sessionId = localStorage.getItem("athena_session_id");
-    if (!sessionId) {
-      router.push("/");
-      return;
-    }
-
-    const storedSession = localStorage.getItem("athena_session_data");
-    if (storedSession) {
-      try {
-        const parsed: StartResponse = JSON.parse(storedSession);
-        setSession(parsed);
-        // Automatically speak the first question
-        speakText(parsed.question);
-      } catch (err) {
-        router.push("/");
-      }
-    } else {
-      router.push("/");
-    }
-    
-    // Cleanup audio URL on unmount
-    return () => {
-      if (audioUrl) URL.revokeObjectURL(audioUrl);
-    };
-  }, []);
-
-  const speakText = async (text: string) => {
+  const speakText = useCallback(async (text: string) => {
     setIsProcessing(true);
     try {
       const blob = await api.textToSpeech(text);
@@ -65,7 +37,36 @@ export default function VoiceInterviewPage() {
     } finally {
       setIsProcessing(false);
     }
-  };
+  }, []);
+
+  // Initialize session
+  useEffect(() => {
+    const sessionId = localStorage.getItem("athena_session_id");
+    if (!sessionId) {
+      router.push("/");
+      return;
+    }
+
+    const storedSession = localStorage.getItem("athena_session_data");
+    if (storedSession) {
+      try {
+        const parsed: StartResponse = JSON.parse(storedSession);
+        setSession(parsed);
+        // Automatically speak the first question
+        speakText(parsed.question);
+      } catch (err) {
+        console.error("Failed to parse session", err);
+        router.push("/");
+      }
+    } else {
+      router.push("/");
+    }
+    
+    // Cleanup audio URL on unmount
+    return () => {
+      if (audioUrl) URL.revokeObjectURL(audioUrl);
+    };
+  }, [router, audioUrl, speakText]);
 
   const handleAudioEnd = () => {
     setIsSpeaking(false);
@@ -215,7 +216,7 @@ export default function VoiceInterviewPage() {
             animate={{ opacity: 1, y: 0 }}
             className="text-2xl font-light leading-relaxed text-white/90"
           >
-            "{status?.question || session.question}"
+            &quot;{status?.question || session.question}&quot;
           </motion.div>
 
           {transcript && (

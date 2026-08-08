@@ -96,6 +96,7 @@ class StartInterviewRequest(BaseModel):
     domain: Optional[str] = Field(default="ai_ml", description="Interview domain: ai_ml, software_engineering, data_engineering, cloud_devops, etc.")
     language: Optional[str] = Field(default="en", description="Interview language code: en, hi, te, es, fr, de, zh, ar, etc.")
     mode: Optional[str] = Field(default="general", description="Interview mode: general, coding, system_design")
+    provider: Optional[str] = Field(default="gemini", description="LLM Provider selection: gemini, claude, local")
     resume_text: Optional[str] = Field(default=None, description="Candidate's resume text")
     jd_text: Optional[str] = Field(default=None, description="Target job description")
 
@@ -218,6 +219,7 @@ class InterviewState(BaseModel):
     domain: str = Field(default="ai_ml", description="Interview domain")
     language: str = Field(default="en", description="Interview language code")
     mode: str = Field(default="general", description="Interview mode")
+    provider: str = Field(default="gemini", description="LLM Provider")
 
     # History
     qa_history: List[Dict[str, Any]] = Field(default_factory=list)
