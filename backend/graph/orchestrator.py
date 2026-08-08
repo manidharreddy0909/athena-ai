@@ -20,6 +20,7 @@ from memory.memory_engine import MemoryEngine
 from agents.interview_agents import (
     generate_question, evaluate_answer, plan_next_question
 )
+from agents.socratic_engine import should_follow_up, generate_socratic_followup, deep_evaluate_answer
 from agents.feedback_agent import generate_report
 from core.config import settings
 
@@ -109,13 +110,14 @@ async def node_generate_question(state: InterviewState) -> InterviewState:
 
 
 async def node_evaluate_answer(state: InterviewState) -> InterviewState:
-    """Evaluate candidate answer."""
+    """Evaluate candidate answer with rich dimensional scoring."""
     logger.info(f"[{state.session_id}] Executing EVALUATION")
     
     if not state.last_answer:
         return state
-        
-    evaluation = await evaluate_answer(
+
+    # Phase 5: Use deep evaluation for rich feedback
+    evaluation = await deep_evaluate_answer(
         question=state.current_question or "",
         answer=state.last_answer,
         topic=state.current_topic or "",
@@ -125,6 +127,8 @@ async def node_evaluate_answer(state: InterviewState) -> InterviewState:
     
     state.last_answer_score = evaluation.get("score", 0.5)
     state.last_answer_feedback = evaluation.get("feedback", "")
+    state.last_strong_points = evaluation.get("strong_points", [])
+    state.last_key_gaps = evaluation.get("key_gaps", [])
     return state
 
 
@@ -182,6 +186,43 @@ async def node_plan_next(state: InterviewState) -> InterviewState:
     """Decide if interview is over, or plan the next topic."""
     logger.info(f"[{state.session_id}] Executing NEXT_QUESTION planning")
     
+    # ── Phase 5: Socratic Follow-up Decision ─────────────────────────────
+    last_score = state.last_answer_score or 0.5
+    last_answer_text = state.last_answer or ""
+    do_followup, followup_reason = await should_follow_up(
+        score=last_score,
+        question_type=state.current_question_type or QuestionType.THEORY,
+        consecutive_follow_ups=state.consecutive_follow_ups,
+        answer=last_answer_text,
+    )
+
+    if do_followup:
+        logger.info(f"[{state.session_id}] Socratic mode activated: {followup_reason}")
+        followup_q = await generate_socratic_followup(
+            topic=state.current_topic or "",
+            original_question=state.current_question or "",
+            candidate_answer=last_answer_text,
+            score=last_score,
+            difficulty=state.current_difficulty,
+        )
+        state.current_question = followup_q
+        state.current_question_type = QuestionType.FOLLOW_UP
+        state.consecutive_follow_ups += 1
+        state.is_followup_question = True
+        state.questions_asked += 1
+        state.current_reasoning_trace = ReasoningTrace(
+            proposing_agent="socratic_engine",
+            chief_rationale=followup_reason,
+            human_explanation=f"I noticed your answer on {state.current_topic} had some gaps. Let me probe a bit deeper.",
+            difficulty_rationale="Same difficulty — drilling into your specific answer.",
+        )
+        return state
+
+    # Reset follow-up counter when we move to a new topic
+    state.consecutive_follow_ups = 0
+    state.is_followup_question = False
+    # ────────────────────────────────────────────────────────────────────
+
     # Check Completion conditions
     if (state.questions_asked >= settings.MIN_QUESTIONS and 
         len(state.curriculum_days_covered) >= settings.MIN_CURRICULUM_DAYS) or \
@@ -532,9 +573,16 @@ async def respond_to_question(request: RespondRequest) -> RespondResponse:
         reasoning_trace=final_state.current_reasoning_trace,
         answer_score=final_state.last_answer_score,
         answer_feedback=final_state.last_answer_feedback,
+        strong_points=final_state.last_strong_points,
+        key_gaps=final_state.last_key_gaps,
+        is_followup=final_state.is_followup_question,
         interview_complete=(final_state.status == InterviewStatus.COMPLETE),
         questions_remaining=max(0, settings.MIN_QUESTIONS - final_state.questions_asked),
-        message="Interview complete" if final_state.status == InterviewStatus.COMPLETE else "Next question",
+        message=(
+            "Interview complete"
+            if final_state.status == InterviewStatus.COMPLETE
+            else ("Follow-up question" if final_state.is_followup_question else "Next question")
+        ),
     )
 
 

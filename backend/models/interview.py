@@ -118,6 +118,9 @@ class RespondResponse(BaseModel):
     reasoning_trace: Optional[ReasoningTrace] = None
     answer_score: Optional[float] = None
     answer_feedback: Optional[str] = None
+    strong_points: List[str] = Field(default_factory=list)
+    key_gaps: List[str] = Field(default_factory=list)
+    is_followup: bool = False
     interview_complete: bool = False
     questions_remaining: int = 0
     message: str = ""
@@ -206,10 +209,16 @@ class InterviewState(BaseModel):
     consecutive_correct: int = 0
     consecutive_wrong: int = 0
 
-    # Last answer
+    # Last answer (rich evaluation)
     last_answer: Optional[str] = None
     last_answer_score: Optional[float] = None
     last_answer_feedback: Optional[str] = None
+    last_strong_points: List[str] = Field(default_factory=list)
+    last_key_gaps: List[str] = Field(default_factory=list)
+
+    # Socratic follow-up tracking
+    consecutive_follow_ups: int = 0  # How many follow-ups in a row on the same topic
+    is_followup_question: bool = False  # Whether the current question is a follow-up
 
     class Config:
         arbitrary_types_allowed = True
