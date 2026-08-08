@@ -218,7 +218,7 @@ export default function DashboardPage() {
                 <Tooltip
                   contentStyle={{ background: '#12121a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8 }}
                   labelStyle={{ color: '#f8fafc' }}
-                  formatter={(v: number) => [`${v}`, 'Score']}
+                  formatter={(v: any) => [`${v}`, 'Score']}
                 />
                 <Bar dataKey="score" radius={[4, 4, 0, 0]}>
                   {barData.map((entry, i) => (
