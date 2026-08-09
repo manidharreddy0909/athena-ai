@@ -138,11 +138,12 @@ class VoiceService:
     @classmethod
     def get_provider(cls) -> VoiceProvider:
         if cls._provider is None:
-            if settings.VOICE_API_KEY:
+            api_key = settings.VOICE_API_KEY or settings.GEMINI_API_KEY
+            if api_key:
                 logger.info("🎙️ Voice: Using Gemini Voice Provider")
-                cls._provider = GeminiVoiceProvider(api_key=settings.VOICE_API_KEY)
+                cls._provider = GeminiVoiceProvider(api_key=api_key)
             else:
-                logger.warning("🎙️ Voice: VOICE_API_KEY not set. Using mock provider.")
+                logger.warning("🎙️ Voice: Neither VOICE_API_KEY nor GEMINI_API_KEY set. Using mock provider.")
                 cls._provider = MockVoiceProvider()
         return cls._provider
 

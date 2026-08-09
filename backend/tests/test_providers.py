@@ -6,7 +6,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.llm import ProviderFactory, OpenAICompatibleProvider, BreathAILayerProvider
+from core.llm import ProviderFactory, OpenAICompatibleProvider, BreethAILayerProvider
 from core.config import settings
 
 async def test_providers():
@@ -17,20 +17,20 @@ async def test_providers():
     assert isinstance(primary, OpenAICompatibleProvider)
     print("   Primary Provider loaded successfully ✓")
 
-    # If Breath AI keys are missing, breath provider should fallback to primary
-    settings.BREATH_API_KEY = ""
-    breath_fallback = ProviderFactory.get_breath_layer()
-    assert isinstance(breath_fallback, OpenAICompatibleProvider)
-    print("   Breath AI correctly falls back to Primary when unconfigured ✓")
+    # If Breeth AI keys are missing, breeth provider should fallback to primary
+    settings.BREETH_API_KEY = ""
+    breeth_fallback = ProviderFactory.get_breeth_layer()
+    assert isinstance(breeth_fallback, OpenAICompatibleProvider)
+    print("   BREETH AI correctly falls back to Primary when unconfigured ✓")
 
-    # If configured, it should return the Breath AI provider
-    settings.BREATH_API_KEY = "mock_key"
+    # If configured, it should return the Breeth AI provider
+    settings.BREETH_API_KEY = "mock_key"
     # reset singleton
-    ProviderFactory._breath_provider = None
+    ProviderFactory._breeth_provider = None
     
-    breath_active = ProviderFactory.get_breath_layer()
-    assert isinstance(breath_active, BreathAILayerProvider)
-    print("   Breath AI activates when configured ✓")
+    breeth_active = ProviderFactory.get_breeth_layer()
+    assert isinstance(breeth_active, BreethAILayerProvider)
+    print("   BREETH AI activates when configured ✓")
 
     print("\n✅ All provider tests passed!")
 

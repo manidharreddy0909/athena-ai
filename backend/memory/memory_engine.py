@@ -140,19 +140,18 @@ class MemoryEngine:
     Each interview session gets one MemoryEngine instance.
     """
 
-    def __init__(self, session_id: str):
+    def __init__(self, session_id: str, candidate_name: str = "Unknown"):
         self.session_id = session_id
+        self.candidate_name = candidate_name
         self.short_term = ShortTermMemory(max_size=5)
         self.reasoning = ReasoningMemory()
         self.interview = InterviewMemory()
         
         # Async External Layers (Phase 4 integration)
-        from memory.semantic_memory import SemanticMemory
-        from core.breath_client import BreathMemoryClient
+        from core.breeth_client import BreethMemoryClient
         
-        self.semantic = SemanticMemory()
-        self.breath_client = BreathMemoryClient()
-        logger.debug(f"🧠 Memory Engine initialized for {session_id}")
+        self.breeth_client = BreethMemoryClient()
+        logger.debug(f"🧠 Memory Engine initialized for {session_id} (Candidate: {candidate_name})")
 
     async def record_qa(
         self,
@@ -167,41 +166,40 @@ class MemoryEngine:
         self.short_term.add(question, answer, topic, score)
         self.interview.record_answer(topic, curriculum_day, question_type, score, question, answer)
         
-        # Async saves
-        await self.semantic.add_memory(self.session_id, question, answer, topic)
-        
-        # Generate dummy reasoning trace for now and save it to BREATH
-        trace = {
-            "evaluation_score": score,
-            "decision": "Store Q&A pair."
-        }
-        await self.breath_client.save_reasoning_trace(
+        # Async save to persistent memory (BREETH)
+        content = (
+            f"Topic: {topic}\n"
+            f"Question: {question}\n"
+            f"Candidate Answer: {answer}\n"
+            f"Evaluated Score: {score}\n"
+            f"Strengths: {'Strong answer' if score >= 0.75 else 'Needs improvement' if score < 0.5 else 'Adequate'}"
+        )
+        await self.breeth_client.save_episode(
             session_id=self.session_id,
-            question_number=len(self.interview.topics_covered),
-            topic=topic,
-            reasoning_trace=trace
+            candidate_name=self.candidate_name,
+            content=content
         )
 
     async def get_context_for_llm(self, current_topic: Optional[str] = None) -> str:
-        """Get formatted context to inject into LLM prompts (combining ShortTerm + Semantic)."""
+        """Get formatted context to inject into LLM prompts (combining ShortTerm + Breeth memory)."""
         short_term_context = self.short_term.to_prompt_context()
         
         if not current_topic:
             return short_term_context
             
         # Enrich with semantic search if we have a current topic
-        semantic_results = await self.semantic.search_relevant_history(
-            session_id=self.session_id,
-            current_topic=current_topic,
-            query_text=f"Concepts related to {current_topic}"
+        semantic_results = await self.breeth_client.retrieve_context(
+            candidate_name=self.candidate_name,
+            query=f"Concepts related to {current_topic}",
+            limit=2
         )
         
         if not semantic_results:
             return short_term_context
             
-        semantic_context = "Relevant past discussions:\n"
+        semantic_context = "Relevant past discussions and insights:\n"
         for idx, res in enumerate(semantic_results):
-            semantic_context += f"- Past Q on {res['topic']}: {res['question']}\n  Candidate Answer: {res['answer'][:150]}...\n"
+            semantic_context += f"- {res}\n"
             
         return f"{semantic_context}\nRecent Conversation:\n{short_term_context}"
 

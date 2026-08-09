@@ -85,3 +85,39 @@ async def get_status_endpoint(session_id: str):
         "current_topic": state.current_topic,
         "is_complete": state.status.value == "complete",
     }
+
+
+@router.get("/interview/{session_id}/history")
+async def get_history_endpoint(session_id: str):
+    """
+    Return the full Q&A history for a session.
+    Each entry includes: question, answer, topic, score, feedback, question_number.
+    """
+    session = _sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+
+    state = session["state"]
+    history = [
+        {
+            "question_number": i + 1,
+            "question": qa.get("question", ""),
+            "answer": qa.get("answer", ""),
+            "topic": qa.get("topic", "Unknown"),
+            "question_type": qa.get("question_type", "theory"),
+            "curriculum_day": qa.get("curriculum_day"),
+            "score": qa.get("score"),
+            "feedback": qa.get("feedback", ""),
+            "difficulty_level": qa.get("difficulty_level"),
+        }
+        for i, qa in enumerate(state.qa_history)
+    ]
+
+    return {
+        "session_id": session_id,
+        "candidate_name": state.candidate.name,
+        "domain": state.domain,
+        "mode": state.mode,
+        "total_questions": len(history),
+        "qa_history": history,
+    }

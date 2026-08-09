@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { BrainCircuit, Play, ArrowRight, ShieldCheck, ChevronRight, Mic, Code2, Globe2, FileText, LayoutDashboard, Cpu, MessageSquare } from "lucide-react";
+import { BrainCircuit, Play, ArrowRight, ShieldCheck, ChevronRight, Mic, Code2, Globe2, FileText, LayoutDashboard, Cpu, MessageSquare, Activity } from "lucide-react";
 import { api, CandidateProfile } from "@/lib/api";
 
 const DOMAINS = [
@@ -70,6 +70,7 @@ export default function Home() {
       const res = await api.startInterview(profile);
       localStorage.setItem("athena_session_id", res.session_id);
       localStorage.setItem("athena_session_data", JSON.stringify(res));
+      localStorage.setItem("athena_profile", JSON.stringify(profile));
       router.push("/interview");
     } catch (err) {
       console.error(err);
@@ -79,7 +80,7 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center p-4 relative overflow-hidden bg-bg-main text-text-primary">
+    <main className="min-h-screen flex flex-col items-center justify-center p-4 relative overflow-hidden bg-bg-primary text-text-primary">
       {/* Cinematic Background Effects */}
       <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] bg-accent-primary/10 blur-[150px] rounded-full pointer-events-none animate-pulse-slow" />
       <div className="absolute bottom-[-20%] right-[-10%] w-[60%] h-[60%] bg-accent-secondary/10 blur-[150px] rounded-full pointer-events-none" />
@@ -295,9 +296,3 @@ export default function Home() {
   );
 }
 
-// Activity icon for v2 badge
-function Activity(props: any) {
-  return (
-    <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-  )
-}

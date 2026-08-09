@@ -21,7 +21,7 @@ async def lifespan(app: FastAPI):
     logger.info("✅ Database initialized")
     logger.info(f"🤖 Gemini Provider: {'configured' if settings.GEMINI_API_KEY else 'NOT SET (set GEMINI_API_KEY)'}")
     logger.info(f"🧠 BREATH Memory: {'configured' if settings.BREETH_API_KEY else 'mock mode (set BREETH_API_KEY)'}")
-    logger.info(f"🎙️ Voice: {'configured' if settings.VOICE_API_KEY else 'mock mode (set VOICE_API_KEY)'}")
+    logger.info(f"🎙️ Voice: {'configured' if settings.VOICE_API_KEY or settings.GEMINI_API_KEY else 'mock mode (set VOICE_API_KEY or GEMINI_API_KEY)'}")
     yield
     logger.info("🦉 Athena AI shutting down...")
 

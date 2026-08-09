@@ -179,7 +179,7 @@ class ModelRegistry:
 class ProviderFactory:
     """Manages provider instantiation and fallback logic."""
     
-    _breath_provider: Optional[AIProvider] = None
+    _breeth_provider: Optional[AIProvider] = None
     _embedding_provider: Optional[AsyncOpenAI] = None
 
     @classmethod
@@ -192,15 +192,20 @@ class ProviderFactory:
     def get_breeth_layer(cls) -> AIProvider:
         """Returns BREETH AI if configured, otherwise falls back to Primary."""
         if settings.BREETH_API_KEY:
-            if not cls._breath_provider:
-                cls._breath_provider = BreethAILayerProvider(
+            if cls._breeth_provider is None:
+                cls._breeth_provider = BreethAILayerProvider(
                     api_key=settings.BREETH_API_KEY,
                     base_url=settings.BREETH_BASE_URL,
                 )
-            return cls._breath_provider
+            return cls._breeth_provider
         
         logger.debug("BREETH AI not configured. Falling back to Primary Provider.")
         return cls.get_primary()
+
+    @classmethod
+    def get_breath_layer(cls) -> AIProvider:
+        """Backward-compatible alias for get_breeth_layer."""
+        return cls.get_breeth_layer()
 
     @classmethod
     def get_embedding_client(cls) -> AsyncOpenAI:

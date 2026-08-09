@@ -3,10 +3,13 @@ Athena AI — Analytics API Routes (Phase 13)
 Exposes per-session analytics, aggregate statistics, and performance trends.
 GET /api/v1/analytics/{session_id}/summary
 GET /api/v1/analytics/global/stats
+GET /api/v1/analytics/candidate/{name}/history
+GET /api/v1/analytics/twin/{name}
 """
 from fastapi import APIRouter, HTTPException
 from loguru import logger
 from graph.orchestrator import _sessions
+from twin.digital_twin import get_or_create_twin, _twins
 
 router = APIRouter()
 
@@ -116,3 +119,61 @@ async def get_global_stats():
         "global_avg_score": global_avg,
         "domain_distribution": domain_counts,
     }
+
+
+@router.get("/analytics/candidate/{name}/history")
+async def get_candidate_history(name: str):
+    """
+    Return all sessions completed by a specific candidate (matched by name).
+    Useful for tracking progress over time.
+    """
+    candidate_sessions = [
+        {
+            "session_id": sid,
+            "domain": s["state"].domain,
+            "mode": s["state"].mode,
+            "questions_asked": s["state"].questions_asked,
+            "topics_covered": list(s["state"].topics_covered),
+            "status": s["state"].status.value,
+            "confidence_score": round(s["state"].confidence_score, 3),
+            "avg_score": round(
+                sum(qa.get("score", 0.5) for qa in s["state"].qa_history) /
+                max(1, len(s["state"].qa_history)), 3
+            ),
+        }
+        for sid, s in _sessions.items()
+        if s["state"].candidate.name.lower() == name.lower()
+    ]
+
+    if not candidate_sessions:
+        return {"candidate_name": name, "sessions": [], "message": "No sessions found for this candidate."}
+
+    return {
+        "candidate_name": name,
+        "total_sessions": len(candidate_sessions),
+        "sessions": candidate_sessions,
+    }
+
+
+@router.get("/analytics/twin/{name}")
+async def get_digital_twin(name: str):
+    """
+    Return the Digital Twin profile for a candidate.
+    Shows their aggregated skill vector, growth trajectory,
+    weak/strong topics, and session history summary.
+    """
+    twin = _twins.get(name)
+    if not twin:
+        # Try case-insensitive match
+        for k in _twins:
+            if k.lower() == name.lower():
+                twin = _twins[k]
+                break
+
+    if not twin:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No digital twin found for '{name}'. Complete at least one interview first."
+        )
+
+    return twin.to_dict()

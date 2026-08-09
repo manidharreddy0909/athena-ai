@@ -142,4 +142,34 @@ export const api = {
     if (!res.ok) throw new Error(`Status failed: ${res.statusText}`);
     return res.json();
   },
+
+  async getHistory(sessionId: string) {
+    const res = await fetch(`${API_BASE}/api/v1/interview/${sessionId}/history`);
+    if (!res.ok) throw new Error(`History failed: ${res.statusText}`);
+    return res.json();
+  },
+
+  async getSessionAnalytics(sessionId: string) {
+    const res = await fetch(`${API_BASE}/api/v1/analytics/${sessionId}/summary`);
+    if (!res.ok) throw new Error(`Analytics failed: ${res.statusText}`);
+    return res.json();
+  },
+
+  async getGlobalStats() {
+    const res = await fetch(`${API_BASE}/api/v1/analytics/global/stats`);
+    if (!res.ok) throw new Error(`Global stats failed: ${res.statusText}`);
+    return res.json();
+  },
+
+  async getCandidateHistory(name: string) {
+    const res = await fetch(`${API_BASE}/api/v1/analytics/candidate/${encodeURIComponent(name)}/history`);
+    if (!res.ok) throw new Error(`Candidate history failed: ${res.statusText}`);
+    return res.json();
+  },
+
+  async getDigitalTwin(name: string) {
+    const res = await fetch(`${API_BASE}/api/v1/analytics/twin/${encodeURIComponent(name)}`);
+    if (!res.ok) throw new Error(`Digital twin failed: ${res.statusText}`);
+    return res.json();
+  },
 };

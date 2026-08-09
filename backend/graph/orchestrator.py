@@ -95,7 +95,10 @@ async def node_profile_analysis(state: InterviewState) -> InterviewState:
 
     # Store instances in global memory for this session
     _sessions[state.session_id]["graph"] = graph
-    _sessions[state.session_id]["memory"] = MemoryEngine(session_id=state.session_id)
+    _sessions[state.session_id]["memory"] = MemoryEngine(
+        session_id=state.session_id,
+        candidate_name=state.candidate.name
+    )
 
     return state
 
@@ -388,7 +391,10 @@ def restore_session_engines(state: InterviewState):
     for topic, confidence in state.topic_confidence.items():
         graph.update_confidence(topic, confidence)
         
-    memory = MemoryEngine(session_id=state.session_id)
+    memory = MemoryEngine(
+        session_id=state.session_id,
+        candidate_name=state.candidate.name
+    )
     # Re-hydrate short term memory only for active state tracking
     for qa in state.qa_history:
         memory.short_term.add(
@@ -644,6 +650,19 @@ async def get_report(session_id: str) -> FeedbackReport:
     state = await get_or_load_session(session_id)
     report = await generate_report(state)
     
+    # Update the Digital Twin with this session's results
+    try:
+        from twin.digital_twin import update_twin_from_report
+        report_dict = report.model_dump()
+        report_dict["domain"] = state.domain
+        report_dict["mode"] = state.mode
+        twin = update_twin_from_report(report_dict)
+        logger.info(f"[{session_id}] Digital Twin updated for '{state.candidate.name}' — "
+                    f"{len(twin.sessions)} sessions total, "
+                    f"trajectory: {twin.get_growth_trajectory().get('trend', 'unknown')}")
+    except Exception as twin_err:
+        logger.warning(f"Digital Twin update skipped/failed: {twin_err}")
+    
     # Save report to DB
     try:
         from db.database import AsyncSessionLocal, InterviewSession
@@ -660,4 +679,6 @@ async def get_report(session_id: str) -> FeedbackReport:
         logger.warning(f"Database report sync skipped/failed: {db_err}")
         
     return report
+
+
 
