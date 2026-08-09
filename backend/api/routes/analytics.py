@@ -8,7 +8,7 @@ GET /api/v1/analytics/twin/{name}
 """
 from fastapi import APIRouter, HTTPException
 from loguru import logger
-from graph.orchestrator import _sessions
+import graph.orchestrator as _orch_module
 from twin.digital_twin import get_or_create_twin, _twins
 
 router = APIRouter()
@@ -20,7 +20,7 @@ async def get_session_analytics(session_id: str):
     Return a detailed performance analytics summary for a specific session.
     Includes per-topic breakdown, time trends, and scoring dimensions.
     """
-    session = _sessions.get(session_id)
+    session = _orch_module._sessions.get(session_id)
     if not session:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
 
@@ -96,13 +96,14 @@ async def get_global_stats():
     Return aggregate statistics across all active sessions.
     Useful for monitoring and platform dashboards.
     """
-    total_sessions = len(_sessions)
-    active = sum(1 for s in _sessions.values() if s["state"].status.value == "in_progress")
-    completed = sum(1 for s in _sessions.values() if s["state"].status.value == "complete")
+    sessions = _orch_module._sessions
+    total_sessions = len(sessions)
+    active = sum(1 for s in sessions.values() if s["state"].status.value == "in_progress")
+    completed = sum(1 for s in sessions.values() if s["state"].status.value == "complete")
 
     all_scores = []
     domain_counts: dict = {}
-    for s in _sessions.values():
+    for s in sessions.values():
         state = s["state"]
         for qa in state.qa_history:
             if qa.get("score") is not None:
@@ -141,7 +142,7 @@ async def get_candidate_history(name: str):
                 max(1, len(s["state"].qa_history)), 3
             ),
         }
-        for sid, s in _sessions.items()
+        for sid, s in _orch_module._sessions.items()
         if s["state"].candidate.name.lower() == name.lower()
     ]
 
